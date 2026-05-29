@@ -29,6 +29,9 @@ On first run, Ultralytics downloads `yolov8n.pt` automatically (unless you set `
 |----------|---------|-------------|
 | `YOLO_WEIGHTS` | `yolov8n.pt` | YOLOv8 weights file (`yolov8m.pt`, or a football fine-tuned `.pt`) |
 | `DET_CONF` | `0.1` | YOLO confidence threshold (ByteTrack uses low-conf detections) |
+| `TRACKER_TYPE` | `bytetrack` | Tracker backend: `bytetrack` or `botsort` (BoT-SORT adds camera-motion compensation) |
+| `TRACK_BUFFER` | `30` (bytetrack), `120` (botsort) | Frames a lost track stays alive before its ID is dropped |
+| `GMC_METHOD` | `sparseOptFlow` | BoT-SORT camera motion comp: `sparseOptFlow`/`orb`/`ecc`/`none` (`ecc` needs opencv-contrib) |
 | `TRACK_LOW_THRESH` | `0.1` | ByteTrack second-stage threshold; warn if `DET_CONF` is higher |
 | `TRACK_MIN_AGE` | `3` | Frames before a track is analyzed for OCR / included in output |
 | `OCR_EVERY` | `5` | Run OCR every N frames (OCR is slow) |
@@ -56,6 +59,17 @@ On first run, Ultralytics downloads `yolov8n.pt` automatically (unless you set `
 | `SAM_DEVICE` | `auto` | `mps`, `cuda`, `cpu`, or `auto` |
 | `SAM_WARMUP_FRAMES` | `3` | Frames on locked track after identity lock before SAM |
 | `REID_FALLBACK_THRESH` | `0.65` | ReID match when ByteTrack loses lock `track_id` |
+| `SCENE_CUT_THRESH` | `0.65` | Grayscale-histogram correlation below this marks a hard broadcast cut |
+| `SCENE_CUT_SUPPRESS_FRAMES` | `45` | Frames after a cut where ball events are suppressed while the shot/lock stabilizes |
+| `SCENE_CUT_CLEAR_VOTES` | `0` | On cut, also clear accumulated identity votes (set `1` if relock keeps picking the wrong track) |
+| `POSSESS_REQUIRE_ON_PITCH` | `1` | Require both ball and target foot to project on the pitch before counting possession (metres mode) |
+| `POSSESS_RADIUS_M` | `2.0` | Ball-to-target-foot distance (metres) counting as possession when target is visible |
+| `GAP_POSSESS_RADIUS_M` | `2.5` | Sticky possession radius (metres) while the target is briefly occluded |
+| `EPOCH_MIN_VISIBLE_FRAMES` | `5` | Min on-pitch visible frames for a lock epoch to contribute events / be a heatmap candidate |
+| `BALL_MAX_SPEED_M_S` | `36` | Physical ceiling on ball motion; detections implying a larger frame-to-frame jump are rejected as far-field false positives instead of poisoning the Kalman velocity |
+| `BALL_OUTLIER_MAX_FRAMES` | `5` | Consecutive rejected detections before the ball filter re-acquires at the new location (handles genuine long passes/relocations) |
+| `BBOX_MIN_ASPECT` | `0.85` | Min height/width for a candidate to count as an upright player (rejects banners/graphics) |
+| `BALL_EVENTS_SUMMARY_LOG` | unset | Optional path for the JSONL ball-event diagnostic summary (disabled when unset) |
 
 After identity lock, the pipeline waits **3 consecutive frames** on the locked `track_id`, then runs **MobileSAM every frame** (box prompt, center-point retry). Rows include full-res `mask_rle`, normalized `foot_x`/`foot_y` for the heat map, and mask-tight OCR/ReID crops. See [backend/weights/README.md](weights/README.md) for `mobile_sam.pt` and package install.
 

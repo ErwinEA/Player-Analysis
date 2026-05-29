@@ -84,9 +84,18 @@ class PersonTracker:
         track_low_thresh: float = 0.1,
         new_track_thresh: float = 0.15,
         match_thresh: float = 0.8,
+        tracker_type: str | None = None,
     ) -> None:
-        from ultralytics.trackers.byte_tracker import BYTETracker
+        import os
+
         from ultralytics.utils import IterableSimpleNamespace
+
+        ttype = (tracker_type or os.environ.get("TRACKER_TYPE", "bytetrack")).strip().lower()
+        if ttype not in ("bytetrack", "botsort"):
+            ttype = "bytetrack"
+        # BoT-SORT keeps lost tracks longer; honor TRACK_BUFFER env override.
+        if ttype == "botsort":
+            track_buffer = int(os.environ.get("TRACK_BUFFER", "120"))
 
         self.track_buffer = track_buffer
         self.track_high_thresh = track_high_thresh
@@ -94,17 +103,31 @@ class PersonTracker:
         self.new_track_thresh = new_track_thresh
         self.match_thresh = match_thresh
 
-        self.tracker = BYTETracker(
-            args=IterableSimpleNamespace(
-                tracker_type="bytetrack",
-                track_buffer=track_buffer,
-                track_high_thresh=track_high_thresh,
-                track_low_thresh=track_low_thresh,
-                new_track_thresh=new_track_thresh,
-                match_thresh=match_thresh,
-                fuse_score=False,
-            )
+        args = dict(
+            tracker_type=ttype,
+            track_buffer=track_buffer,
+            track_high_thresh=track_high_thresh,
+            track_low_thresh=track_low_thresh,
+            new_track_thresh=new_track_thresh,
+            match_thresh=match_thresh,
+            fuse_score=False,
         )
+
+        if ttype == "botsort":
+            from ultralytics.trackers.bot_sort import BOTSORT
+
+            args.update(
+                gmc_method=os.environ.get("GMC_METHOD", "sparseOptFlow"),
+                proximity_thresh=float(os.environ.get("PROXIMITY_THRESH", "0.5")),
+                appearance_thresh=float(os.environ.get("APPEARANCE_THRESH", "0.25")),
+                with_reid=False,
+                model="auto",
+            )
+            self.tracker = BOTSORT(args=IterableSimpleNamespace(**args))
+        else:
+            from ultralytics.trackers.byte_tracker import BYTETracker
+
+            self.tracker = BYTETracker(args=IterableSimpleNamespace(**args))
 
     def update(
         self,

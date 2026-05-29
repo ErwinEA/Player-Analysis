@@ -182,12 +182,19 @@ class BallDetector:
         weights: str | None = None,
         conf: float | None = None,
         iou: float | None = None,
+        fps: float = 25.0,
     ) -> None:
         self.conf = conf if conf is not None else _env_float("BALL_CONF", 0.25)
         self.iou = iou if iou is not None else _env_float("BALL_IOU", 0.5)
         self._gap_max = _env_int("BALL_KALMAN_GAP_MAX_FRAMES", 22)
         self._kalman_q = _env_float("BALL_KALMAN_Q", 0.5)
         self._kalman_r = _env_float("BALL_KALMAN_R", 1.0)
+        # Physical ceiling on ball motion: a projected detection implying a larger
+        # frame-to-frame jump is a far-field false positive / homography blow-up and
+        # is rejected so it can't poison the Kalman velocity (see BALL_MAX_SPEED_M_S).
+        max_speed = _env_float("BALL_MAX_SPEED_M_S", 36.0)
+        self._max_jump_m = max_speed / fps if fps > 0 else max_speed
+        self._outlier_max = _env_int("BALL_OUTLIER_MAX_FRAMES", 5)
 
         resolved = resolve_ball_weights(weights)
         self.weights: str | None = resolved
@@ -195,6 +202,7 @@ class BallDetector:
         self._model = None
         self._kalman = _PitchKalman(q=self._kalman_q, r=self._kalman_r)
         self._predict_streak = 0
+        self._reject_streak = 0
         self._last_cx_px = 0.0
         self._last_cy_px = 0.0
 
@@ -218,6 +226,7 @@ class BallDetector:
     def reset(self) -> None:
         self._kalman.reset()
         self._predict_streak = 0
+        self._reject_streak = 0
         self._last_cx_px = 0.0
         self._last_cy_px = 0.0
 
@@ -283,8 +292,26 @@ class BallDetector:
         else:
             pitch_m = None
 
+        # Reject detections that imply impossible motion (far-field false positives /
+        # homography blow-ups). Coast on prediction so the velocity stays sane; only
+        # re-acquire if a new location persists past BALL_OUTLIER_MAX_FRAMES.
+        if pitch_m is not None and self._kalman._x is not None:
+            jump = float(
+                np.hypot(
+                    pitch_m[0] - self._kalman._x[0],
+                    pitch_m[1] - self._kalman._x[1],
+                )
+            )
+            if jump > self._max_jump_m:
+                self._reject_streak += 1
+                if self._reject_streak <= self._outlier_max:
+                    return self._coast(frame_idx)
+                self._kalman.reset()
+                self._reject_streak = 0
+
         if pitch_m is not None:
             self._predict_streak = 0
+            self._reject_streak = 0
             if detection is not None:
                 self._last_cx_px = detection.cx_px
                 self._last_cy_px = detection.cy_px
@@ -300,6 +327,10 @@ class BallDetector:
                 predicted=False,
             )
 
+        return self._coast(frame_idx)
+
+    def _coast(self, frame_idx: int) -> BallState:
+        """Advance the filter on prediction during a missing/rejected detection."""
         if self._kalman._x is None:
             return _empty_state(frame_idx)
 
@@ -312,6 +343,7 @@ class BallDetector:
             )
             self._kalman.reset()
             self._predict_streak = 0
+            self._reject_streak = 0
             return _empty_state(frame_idx)
 
         sx, sy, vx, vy = self._kalman.predict()

@@ -114,6 +114,9 @@ Or clone the repo and set `MOBILE_SAM_REPO=/path/to/MobileSAM`.
 | `REID_FALLBACK_MARGIN` | `0.10` | Min gap vs runner-up ReID score for fallback |
 | `REID_FALLBACK_MAX_CENTER_FRAC` | `0.12` | Max bbox center jump (diag fraction) for fallback |
 | `SAM_MASK_SCALE` | `0.5` | Downscale masks before RLE in API (0.125–1.0) |
+| `TRACKER_TYPE` | `bytetrack` | Tracker backend: `bytetrack` or `botsort` (GMC for camera motion) |
+| `TRACK_BUFFER` | `30`/`120` | Frames a lost track survives (default 120 under `botsort`) |
+| `GMC_METHOD` | `sparseOptFlow` | BoT-SORT motion comp: `sparseOptFlow`/`orb`/`ecc`/`none` |
 
 | Variable | Default | Description |
 |----------|---------|-------------|

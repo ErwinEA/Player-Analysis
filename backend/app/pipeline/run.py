@@ -14,6 +14,7 @@ from backend.app.pipeline.detector import PersonDetector
 from backend.app.pipeline.matcher import TrackIdentityMatcher
 from backend.app.pipeline.ocr import JerseyOCR
 from backend.app.pipeline.reid import get_reid_extractor
+from backend.app.pipeline.scene_cut import SceneCutDetector
 from backend.app.pipeline.tracker import PlayerTracker
 from backend.app.pipeline.heatmap import build_heatmap_from_rows
 from backend.app.pipeline.movement_stats import (
@@ -127,6 +128,99 @@ def _ball_events_enabled() -> bool:
     )
 
 
+def _ball_debug_dir() -> str | None:
+    """Opt-in directory for annotated target-vs-ball debug frames (BALL_DEBUG_DIR)."""
+    raw = os.environ.get("BALL_DEBUG_DIR", "").strip()
+    if not raw:
+        return None
+    os.makedirs(raw, exist_ok=True)
+    return raw
+
+
+def _save_ball_debug(
+    *,
+    out_dir: str,
+    frame,
+    frame_idx: int,
+    target_foot_px: tuple[float, float] | None,
+    target_bbox: list[float] | None,
+    ball_det,
+    target_m: tuple[float, float] | None,
+    ball_m: tuple[float, float] | None,
+) -> None:
+    """Draw target box/foot + detected ball and append a JSONL row. Diagnostic only."""
+    import json
+
+    img = frame.copy()
+    if target_bbox is not None:
+        x1, y1, x2, y2 = (int(v) for v in target_bbox)
+        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    if target_foot_px is not None:
+        fx, fy = int(target_foot_px[0]), int(target_foot_px[1])
+        cv2.circle(img, (fx, fy), 8, (0, 255, 0), -1)
+        cv2.putText(
+            img, "TARGET", (fx + 10, fy), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2
+        )
+
+    dist_px: float | None = None
+    if ball_det is not None:
+        bx1, by1 = int(ball_det.x1), int(ball_det.y1)
+        bx2, by2 = int(ball_det.x2), int(ball_det.y2)
+        bcx, bcy = int(ball_det.cx_px), int(ball_det.cy_px)
+        cv2.rectangle(img, (bx1, by1), (bx2, by2), (0, 0, 255), 2)
+        cv2.circle(img, (bcx, bcy), 5, (0, 0, 255), -1)
+        cv2.putText(
+            img,
+            f"BALL {ball_det.conf:.2f}",
+            (bx1, max(0, by1 - 6)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 0, 255),
+            2,
+        )
+        if target_foot_px is not None:
+            dist_px = (
+                (target_foot_px[0] - ball_det.cx_px) ** 2
+                + (target_foot_px[1] - ball_det.cy_px) ** 2
+            ) ** 0.5
+            cv2.line(
+                img,
+                (int(target_foot_px[0]), int(target_foot_px[1])),
+                (bcx, bcy),
+                (0, 255, 255),
+                2,
+            )
+
+    dist_m: float | None = None
+    if target_m is not None and ball_m is not None:
+        dist_m = (
+            (target_m[0] - ball_m[0]) ** 2 + (target_m[1] - ball_m[1]) ** 2
+        ) ** 0.5
+
+    header = f"f{frame_idx}"
+    if dist_px is not None:
+        header += f" dpx={dist_px:.0f}"
+    if dist_m is not None:
+        header += f" dm={dist_m:.1f}"
+    cv2.putText(
+        img, header, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2
+    )
+    cv2.imwrite(os.path.join(out_dir, f"f{frame_idx:05d}.jpg"), img)
+
+    rec = {
+        "frame": frame_idx,
+        "target_px": list(target_foot_px) if target_foot_px is not None else None,
+        "ball_px": [ball_det.cx_px, ball_det.cy_px] if ball_det is not None else None,
+        "ball_conf": ball_det.conf if ball_det is not None else None,
+        "dist_px": dist_px,
+        "target_m": list(target_m) if target_m is not None else None,
+        "ball_m": list(ball_m) if ball_m is not None else None,
+        "dist_m": dist_m,
+    }
+    with open(os.path.join(out_dir, "frames.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec) + "\n")
+
+
 def _foot_m_from_norm(
     calibration: PitchCalibration,
     foot_nx: float,
@@ -175,6 +269,7 @@ def _foot_from_locked_bbox(
             last_bbox=last_seg_bbox,
             frame_width=width,
             frame_height=height,
+            calibration=calibration,
         )
         if resolved is not None:
             _, bbox, _ = resolved
@@ -336,6 +431,14 @@ def run_pipeline(
         this_frame_target_visible = False
         this_frame_seg_source: str | None = None
         enable_ball = _ball_events_enabled()
+        ball_debug_dir = _ball_debug_dir()
+        scene_detector = SceneCutDetector()
+        scene_cut_count = 0
+        suppressed_frame_count = 0
+        # Lock windows bounded by scene cuts; archived (not discarded) on each cut so
+        # the best/longest epoch is analysed instead of whatever happens to be last.
+        epochs: list = []
+        epoch_start_frame = 0
 
         while True:
             if frame_idx >= frame_cap:
@@ -343,6 +446,43 @@ def run_pipeline(
             ok, frame = cap.read()
             if not ok:
                 break
+
+            # Broadcast cut: invalidate cross-shot tracker/lock state and drop the
+            # timeline collected for the prior shot before processing this frame.
+            if scene_detector.update(frame):
+                scene_cut_count += 1
+                from backend.app.pipeline.ball_events.run_events import LockEpoch
+
+                _prev_lock = matcher.lock
+                epochs.append(
+                    LockEpoch(
+                        start_frame=epoch_start_frame,
+                        end_frame=frame_idx,
+                        locked_at_frame=locked_at_frame,
+                        track_id=_prev_lock.track_id if _prev_lock else None,
+                        ball_states=ball_states,
+                        target_samples=target_samples,
+                    )
+                )
+                epoch_start_frame = frame_idx
+                tracker.reset()
+                matcher.release_lock()
+                seg_state = SegmentationState()
+                locked_at_frame = None
+                segmentation_started_at_frame = None
+                last_seg_bbox = None
+                last_anchor_foot_px = None
+                if ball_detector is not None:
+                    ball_detector.reset()
+                if target_tracker is not None:
+                    target_tracker.reset()
+                ball_states = []
+                target_samples = []
+                logger.info("Scene cut at frame %s — tracker/lock reset", frame_idx)
+
+            skip_ball = scene_detector.is_suppressed
+            if skip_ball:
+                suppressed_frame_count += 1
 
             ts = frame_idx / fps if fps > 0 else 0.0
             this_frame_foot_m = None
@@ -478,6 +618,7 @@ def run_pipeline(
                     last_bbox=last_seg_bbox,
                     frame_width=width,
                     frame_height=height,
+                    calibration=calibration,
                 )
                 if target_visible is not None:
                     seg_state.record_visible_frame(frame_idx)
@@ -498,6 +639,7 @@ def run_pipeline(
                     last_bbox=last_seg_bbox,
                     frame_width=width,
                     frame_height=height,
+                    calibration=calibration,
                 )
                 if resolved is not None:
                     seg_tid, seg_bbox, is_reid_fb = resolved
@@ -608,6 +750,7 @@ def run_pipeline(
                         last_bbox=last_seg_bbox,
                         frame_width=width,
                         frame_height=height,
+                        calibration=calibration,
                     )
                     if resolved is not None:
                         _, bbox, _ = resolved
@@ -616,7 +759,7 @@ def run_pipeline(
                         this_frame_foot_m = _foot_m_from_bbox(calibration, bbox)
                         this_frame_target_visible = True
 
-            if enable_ball:
+            if enable_ball and not skip_ball:
                 if ball_detector is None:
                     from backend.app.pipeline.ball_events.ball_detector import (
                         BallDetector,
@@ -625,7 +768,7 @@ def run_pipeline(
                         TargetFootTracker,
                     )
 
-                    ball_detector = BallDetector()
+                    ball_detector = BallDetector(fps=fps)
                     target_tracker = TargetFootTracker()
                 if lock is not None and this_frame_foot_px is None:
                     foot_px, foot_m = _foot_from_locked_bbox(
@@ -661,6 +804,23 @@ def run_pipeline(
                         ball_states.append(
                             ball_detector.update_pixels(frame_idx, raw)
                         )
+                    if (
+                        ball_debug_dir is not None
+                        and lock is not None
+                        and this_frame_foot_px is not None
+                        and raw is not None
+                    ):
+                        _ball_state = ball_states[-1]
+                        _save_ball_debug(
+                            out_dir=ball_debug_dir,
+                            frame=frame,
+                            frame_idx=frame_idx,
+                            target_foot_px=this_frame_foot_px,
+                            target_bbox=last_seg_bbox,
+                            ball_det=raw,
+                            target_m=this_frame_foot_m,
+                            ball_m=_ball_state.pitch_m or _ball_state.smooth_m,
+                        )
                 if (
                     target_tracker is not None
                     and calibration is not None
@@ -678,6 +838,21 @@ def run_pipeline(
 
             frame_idx += 1
 
+        # Archive the final in-progress lock window so its samples are analysed too.
+        from backend.app.pipeline.ball_events.run_events import LockEpoch
+
+        _final_lock = matcher.lock
+        epochs.append(
+            LockEpoch(
+                start_frame=epoch_start_frame,
+                end_frame=frame_idx,
+                locked_at_frame=locked_at_frame,
+                track_id=_final_lock.track_id if _final_lock else None,
+                ball_states=ball_states,
+                target_samples=target_samples,
+            )
+        )
+
         if sam_enabled() and not seg_state.sam_active:
             logger.warning(
                 "MobileSAM never activated: locked_track_id=%s visible_count=%s "
@@ -691,6 +866,13 @@ def run_pipeline(
 
         if frame_idx == 0 and total_frames == 0:
             total_frames = frame_idx
+
+        if scene_cut_count:
+            logger.info(
+                "Scene cuts: %s detected, %s frames had ball events suppressed",
+                scene_cut_count,
+                suppressed_frame_count,
+            )
 
         duration_s = frame_idx / fps if fps > 0 else 0.0
         final_lock = matcher.finalize()
@@ -730,36 +912,52 @@ def run_pipeline(
         ball_samples: int | None = None
         events_unavailable_reason: str | None = None
         provenance: str | None = None
+        best_epoch = None
 
         if enable_ball:
             if ball_detector is None or not ball_detector.available:
                 events_unavailable_reason = "no_ball_weights"
             elif calibration is None:
                 events_unavailable_reason = "no_calibration"
-            elif target.track_id is None or target.locked_at_frame is None:
+            elif not any(ep.locked_at_frame is not None for ep in epochs):
                 events_unavailable_reason = "no_lock"
             else:
-                from backend.app.pipeline.ball_events.run_events import run_events
+                from backend.app.pipeline.ball_events.run_events import (
+                    run_events_multi,
+                )
 
-                event_counts, ball_samples = run_events(
-                    ball_states,
-                    target_samples,
+                event_counts, ball_samples, best_epoch = run_events_multi(
+                    epochs,
                     fps=fps,
-                    locked_at_frame=target.locked_at_frame,
                 )
                 provenance = "inferred"
         elif not enable_ball:
             events_unavailable_reason = None
 
+        # Heatmap / movement are single-track artefacts that cannot merge across
+        # re-locks, so scope them to the best lock epoch when one was analysed.
+        if best_epoch is not None and best_epoch.track_id is not None:
+            hm_rows_src = [
+                r
+                for r in rows
+                if best_epoch.start_frame <= r.frame < best_epoch.end_frame
+            ]
+            hm_track_id = best_epoch.track_id
+            hm_locked_at = best_epoch.locked_at_frame
+        else:
+            hm_rows_src = rows
+            hm_track_id = target.track_id
+            hm_locked_at = target.locked_at_frame
+
         heatmap_rows, heatmap_source = _rows_for_heatmap(
-            rows,
-            target.track_id,
-            target_jersey=details.jerseyNumber if target.track_id else None,
+            hm_rows_src,
+            hm_track_id,
+            target_jersey=details.jerseyNumber if hm_track_id else None,
         )
 
         analytics_rows = _rows_for_analytics(
             heatmap_rows,
-            locked_at_frame=target.locked_at_frame,
+            locked_at_frame=hm_locked_at,
         )
 
         seg_start = target.segmentation_started_at_frame

@@ -11,12 +11,15 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
+from backend.app.pipeline.bbox import is_valid_person_bbox
 from backend.app.pipeline.mask_rle import MaskRle, encode_mask_rle
 from backend.app.pipeline.movement_stats import foot_position_pixels
 from backend.app.pipeline.sam_weights import resolve_sam_weights
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
+
+    from backend.app.pipeline.pitch_homography import PitchCalibration
 
 logger = logging.getLogger(__name__)
 
@@ -393,6 +396,38 @@ def get_mobile_sam_segmenter() -> MobileSamSegmenter | None:
         return None
 
 
+def is_valid_reid_candidate_bbox(
+    bbox: list[float],
+    frame_shape: tuple[int, ...],
+    *,
+    calibration: PitchCalibration | None = None,
+) -> bool:
+    """Reject ReID candidate boxes that cannot be the target player.
+
+    Two gates: a person-shape gate (rejects scoreboard banners, grass slivers, giants)
+    and, when calibration is available, an on-pitch gate on the projected foot point
+    (rejects boxes whose feet land off the playing surface, e.g. crowd/graphics).
+    """
+    if not is_valid_person_bbox(bbox, frame_shape):
+        return False
+    if calibration is not None:
+        from backend.app.pipeline.pitch_homography import is_on_pitch
+
+        foot_x, foot_y = foot_position_pixels(bbox)
+        try:
+            x_m, y_m = calibration.pixel_to_meters(foot_x, foot_y)
+        except ValueError:
+            return False
+        if not is_on_pitch(
+            x_m,
+            y_m,
+            length_m=calibration.pitch_length_m,
+            width_m=calibration.pitch_width_m,
+        ):
+            return False
+    return True
+
+
 def resolve_target_bbox(
     tracks: list[dict],
     lock_track_id: int,
@@ -403,11 +438,17 @@ def resolve_target_bbox(
     last_bbox: list[float] | None = None,
     frame_width: int = 0,
     frame_height: int = 0,
+    calibration: PitchCalibration | None = None,
 ) -> tuple[int, list[float], bool] | None:
     """Return (track_id, bbox, is_reid_fallback) for locked or ReID fallback track."""
+    frame_shape = frame.shape[:2]
     by_id = {int(t["track_id"]): t for t in tracks}
     if lock_track_id in by_id:
-        return lock_track_id, list(by_id[lock_track_id]["bbox"]), False
+        bbox = list(by_id[lock_track_id]["bbox"])
+        if is_valid_reid_candidate_bbox(bbox, frame_shape, calibration=calibration):
+            return lock_track_id, bbox, False
+        # Locked track resolved onto an implausible region (graphic/off-pitch);
+        # fall through to ReID rather than trust a bad box.
 
     if reid_prototype is None or reid_extractor is None:
         return None
@@ -419,6 +460,8 @@ def resolve_target_bbox(
     for tr in tracks:
         tid = int(tr["track_id"])
         bbox = list(tr["bbox"])
+        if not is_valid_reid_candidate_bbox(bbox, frame_shape, calibration=calibration):
+            continue
         kit = JerseyOCR.full_kit_crop(frame, bbox)
         emb = reid_extractor.embed(kit)
         sim = cosine_similarity(emb, reid_prototype)

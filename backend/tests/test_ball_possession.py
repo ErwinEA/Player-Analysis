@@ -56,3 +56,30 @@ def test_gap_sticky_possession():
     pf = tracker.update(e1)
     assert pf.state == PossessionState.TARGET_POSSESSED_GAP
     assert pf.confidence == "medium"
+
+
+def test_metres_preferred_over_close_pixels():
+    # Ball and target are pixel-adjacent but metres apart: the metres path must win
+    # and report no possession (camera zoom would otherwise falsely trigger it).
+    tracker = PossessionTracker(fps=30.0)
+    e = _entry(0, _ball(0, 50.0, 34.0), (80.0, 60.0), True, target_px=(101.0, 100.0))
+    pf = tracker.update(e)
+    assert pf.state == PossessionState.NO_BALL
+
+
+def test_pixel_rescue_when_reprojection_inflates_metres():
+    # Ball is pixel-adjacent (unambiguous possession) but the homography projects it
+    # 2.4m away — just over the 2.0m radius yet within the 3m rescue cap. The pixel
+    # rescue must recover this so reprojection noise doesn't kill real possession.
+    tracker = PossessionTracker(fps=30.0)
+    e = _entry(0, _ball(0, 50.0, 34.0), (52.4, 34.0), True, target_px=(101.0, 100.0))
+    pf = tracker.update(e)
+    assert pf.state == PossessionState.TARGET_POSSESSED
+
+
+def test_off_pitch_target_not_possessed():
+    # Target foot projects off the pitch (graphic/crowd): treated as not close.
+    tracker = PossessionTracker(fps=30.0)
+    e = _entry(0, _ball(0, 50.0, 34.0), (200.0, 200.0), True, target_px=(100.0, 100.0))
+    pf = tracker.update(e)
+    assert pf.state == PossessionState.NO_BALL

@@ -98,6 +98,26 @@ class TrackIdentityMatcher:
     def is_locked(self) -> bool:
         return self.lock is not None
 
+    def release_lock(self) -> None:
+        """Drop the current lock so the target can be re-acquired on a new shot.
+
+        Keeps the ReID prototype and vote history by default for fast re-lock; set
+        SCENE_CUT_CLEAR_VOTES=1 to also clear accumulated evidence when stale votes
+        cause repeated wrong re-locks across cuts.
+        """
+        self.lock = None
+        if os.environ.get("SCENE_CUT_CLEAR_VOTES", "0").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            self.number_votes.clear()
+            self.name_votes.clear()
+            self.best_name_for_track.clear()
+            self.color_scores.clear()
+            self.has_number_match.clear()
+            self.reid_embeddings.clear()
+
     def observe_number(
         self,
         track_id: int,

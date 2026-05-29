@@ -89,8 +89,8 @@ def run_events(
 
     pass_min = _env_float("PASS_MIN_SPEED_M_S", 4.0)
     shot_min = _env_float("SHOT_MIN_SPEED_M_S", 8.0)
-    possess_r = _env_float("POSSESS_RADIUS_M", 1.5)
-    gap_r = _env_float("GAP_POSSESS_RADIUS_M", 2.0)
+    possess_r = _env_float("POSSESS_RADIUS_M", 2.0)
+    gap_r = _env_float("GAP_POSSESS_RADIUS_M", 2.5)
     gap_max = _env_int("TARGET_GAP_MAX_FRAMES", 22)
     attack_dir = infer_attack_direction_label(timeline, locked_at_frame)
     logger.info(
@@ -190,6 +190,97 @@ def run_events(
     return counts, ball_samples
 
 
+@dataclass
+class LockEpoch:
+    """A contiguous lock window bounded by scene cuts.
+
+    ball_states / target_samples hold the per-frame samples accumulated during the
+    window; locked_at_frame is the frame the lock was acquired (None if the window
+    never produced a lock and so contributes no events).
+    """
+
+    start_frame: int
+    end_frame: int
+    locked_at_frame: int | None
+    track_id: int | None
+    ball_states: list[BallState]
+    target_samples: list[TargetFrameSample]
+
+
+def _epoch_quality(epoch: LockEpoch) -> tuple[int, int]:
+    """Score an epoch as (on-pitch visible post-lock frames, post-lock frame count)."""
+    if epoch.locked_at_frame is None:
+        return (0, 0)
+    from backend.app.pipeline.pitch_homography import is_on_pitch
+
+    visible = 0
+    post = 0
+    for s in epoch.target_samples:
+        if s.frame < epoch.locked_at_frame:
+            continue
+        post += 1
+        if (
+            s.target_visible
+            and s.target_m is not None
+            and is_on_pitch(s.target_m[0], s.target_m[1])
+        ):
+            visible += 1
+    return (visible, post)
+
+
+def run_events_multi(
+    epochs: list[LockEpoch],
+    *,
+    fps: float,
+) -> tuple[PlayerEventCounts, int, LockEpoch | None]:
+    """Run the possession FSM per lock epoch and aggregate the results.
+
+    Event counts are summed across every epoch clearing a minimum-quality bar
+    (has a lock + EPOCH_MIN_VISIBLE_FRAMES on-pitch visible frames) so a player
+    appearing across several broadcast shots is not undercounted; poor epochs
+    (e.g. a brief off-pitch tail) contribute nothing via the on-pitch gate. The
+    single best epoch (most on-pitch visible frames, tie-break longest) is returned
+    for single-track artefacts (heatmap / movement) that cannot merge across re-locks.
+    """
+    min_visible = _env_int("EPOCH_MIN_VISIBLE_FRAMES", 5)
+    total_samples = sum(_count_detections(ep.ball_states) for ep in epochs)
+    aggregated = PlayerEventCounts()
+    best: LockEpoch | None = None
+    best_score = (-1, -1)
+    counted = 0
+    for ep in epochs:
+        if ep.locked_at_frame is None:
+            continue
+        visible, post = _epoch_quality(ep)
+        if visible < min_visible:
+            continue
+        counts, _ = run_events(
+            ep.ball_states,
+            ep.target_samples,
+            fps=fps,
+            locked_at_frame=ep.locked_at_frame,
+        )
+        aggregated = PlayerEventCounts(
+            Pass=aggregated.Pass + counts.Pass,
+            Shot=aggregated.Shot + counts.Shot,
+            Goal=aggregated.Goal + counts.Goal,
+            Drive=aggregated.Drive + counts.Drive,
+        )
+        counted += 1
+        score = (visible, post)
+        if score > best_score:
+            best_score = score
+            best = ep
+    logger.info(
+        "[BallEvents] Multi-epoch — epochs=%s counted=%s best=%s aggregated=%s",
+        len(epochs),
+        counted,
+        (best.start_frame, best.end_frame, best.locked_at_frame) if best else None,
+        aggregated.model_dump(),
+    )
+    return aggregated, total_samples, best
+
+
 def _count_detections(ball_states: list[BallState]) -> int:
     return sum(1 for b in ball_states if b.conf > 0 and not b.predicted)
 
@@ -208,7 +299,9 @@ def _log_event_summary(
     from backend.app.pipeline.ball_events.possession import PossessionState
     from backend.app.pipeline.ball_events.timeline import dist_m, dist_px
 
-    path = "/Users/erwinelgy/projects/player analysis/.cursor/debug-6b7c41.log"
+    path = os.environ.get("BALL_EVENTS_SUMMARY_LOG", "").strip()
+    if not path:
+        return
     post = [e for e in timeline if e.frame >= locked_at_frame]
     possessed = sum(
         1
@@ -247,6 +340,8 @@ def _log_event_summary(
             "min_m_dist": min(m_dists) if m_dists else None,
             "px_dist_samples": len(px_dists),
             "frames_within_possess_px": sum(1 for d in px_dists if d < possess_px),
+            "proximity_m_count": len(m_dists),
+            "proximity_px_count": len(px_dists),
         },
         "timestamp": int(time.time() * 1000),
     }

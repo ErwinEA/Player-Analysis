@@ -69,6 +69,49 @@ def test_update_pitch_gap_resets_after_max(monkeypatch):
     assert s4.smooth_m is None
 
 
+def test_outlier_detection_is_rejected_not_absorbed(monkeypatch):
+    monkeypatch.setattr(
+        "backend.app.pipeline.ball_events.ball_detector.resolve_ball_weights",
+        lambda *_a, **_k: None,
+    )
+    det = BallDetector(fps=25.0)
+    det.available = True
+    det._model = object()  # type: ignore[assignment]
+    cal = _dummy_cal()
+
+    near = BallDetection(10, 10, 20, 20, 0.9)
+    s1 = det.update_pitch(0, near, cal)
+    assert s1.predicted is False
+    assert s1.smooth_m is not None
+
+    # A detection on the far side of the pitch implies an impossible jump.
+    far = BallDetection(1200, 600, 1220, 620, 0.9)
+    s2 = det.update_pitch(1, far, cal)
+    assert s2.predicted is True  # coasted, not absorbed
+    # Filter stays near the first position rather than teleporting across the pitch.
+    assert s2.smooth_m is not None and s2.smooth_m[0] < 10
+
+
+def test_persistent_relocation_reacquires(monkeypatch):
+    monkeypatch.setattr(
+        "backend.app.pipeline.ball_events.ball_detector.resolve_ball_weights",
+        lambda *_a, **_k: None,
+    )
+    det = BallDetector(fps=25.0)
+    det.available = True
+    det._model = object()  # type: ignore[assignment]
+    det._outlier_max = 3
+    cal = _dummy_cal()
+
+    det.update_pitch(0, BallDetection(10, 10, 20, 20, 0.9), cal)
+    far = BallDetection(1200, 600, 1220, 620, 0.9)
+    states = [det.update_pitch(i, far, cal) for i in range(1, 5)]
+
+    assert [s.predicted for s in states[:3]] == [True, True, True]
+    assert states[3].predicted is False  # re-acquired at the new location
+    assert states[3].smooth_m is not None and states[3].smooth_m[0] > 50
+
+
 def _dummy_cal():
     w, h = 1280, 720
     corners = [

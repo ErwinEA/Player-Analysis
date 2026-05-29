@@ -1,0 +1,52 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.calibrationPrompt {
+  margin: 0 1rem 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  background: #2d3748;
+  border: 1px solid #4a5568;
+}
+
+.promptTitle {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #f7fafc;
+}
+
+.promptText {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: #cbd5e0;
+  line-height: 1.45;
+}
+
+.promptText code {
+  font-size: 0.8rem;
+  color: #e2e8f0;
+}
+
+.calibrateButton {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #63b3ed;
+  background: #2b6cb0;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.calibrateButton:hover {
+  background: #2c5282;
+}
+
+.calibrateButton:focus-visible {
+  outline: 2px solid #90cdf4;
+  outline-offset: 2px;
+}

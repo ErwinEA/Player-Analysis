@@ -1,0 +1,83 @@
+.panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 220px;
+  padding: 16px;
+  background: #d4d4d4;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.heading {
+  margin: 0 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  text-transform: lowercase;
+}
+
+.loading {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #555;
+}
+
+.pendingNote {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #555;
+  line-height: 1.4;
+}
+
+.warning {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #92400e;
+  line-height: 1.4;
+}
+
+.error {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #8b2020;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin: 0;
+  flex: 1;
+}
+
+.metric {
+  padding: 12px;
+  background: #eee;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.metricLabel {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #666;
+}
+
+.metricValue {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: #222;
+  line-height: 1.2;
+}
+
+@media (min-width: 900px) {
+  .grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}

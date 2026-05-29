@@ -1,0 +1,321 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  INVALID_VIDEO_MESSAGE,
+  isValidVideoFile,
+  VIDEO_ACCEPT,
+} from "@/lib/videoFile";
+import {
+  decodeMaskRle,
+  drawMaskOnCanvasScaled,
+  rowAtPlaybackTime,
+} from "@/lib/maskRle";
+import type { MobileSamHealth } from "@/lib/api";
+import type { Row } from "@/types/analysis";
+import styles from "./VideoUploadPanel.module.css";
+
+const UPLOAD_HINT_ID = "video-upload-format-hint";
+
+type VideoUploadPanelProps = {
+  file: File | null;
+  onFileChange: (file: File | null) => void;
+  trackingRows?: Row[] | null;
+  videoFps?: number;
+  analyzeComplete?: boolean;
+  jerseyNumber?: number;
+  masksUnavailableReason?: string | null;
+  mobileSamHealth?: MobileSamHealth | null;
+};
+
+export function VideoUploadPanel({
+  file,
+  onFileChange,
+  trackingRows = null,
+  videoFps = 30,
+  analyzeComplete = false,
+  jerseyNumber = 0,
+  masksUnavailableReason = null,
+  mobileSamHealth = null,
+}: VideoUploadPanelProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rafRef = useRef<number | null>(null);
+  const lastPaintedFrameRef = useRef<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [showMask, setShowMask] = useState(true);
+  const [maskStatus, setMaskStatus] = useState("");
+
+  const maskRows = useMemo(
+    () => (trackingRows ?? []).filter((r) => r.mask_rle),
+    [trackingRows],
+  );
+
+  const hasMasks = maskRows.length > 0;
+  const hasTrackingRows = Boolean(trackingRows && trackingRows.length > 0);
+  const samStatus = mobileSamHealth?.status;
+  const maskUnavailable =
+    analyzeComplete &&
+    hasTrackingRows &&
+    !hasMasks &&
+    samStatus !== "loading" &&
+    samStatus !== "error";
+
+  useEffect(() => {
+    if (!hasMasks) return;
+    setShowMask(true);
+  }, [hasMasks]);
+
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  const paintMask = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || !showMask || !hasMasks) {
+      setMaskStatus(
+        showMask && hasMasks
+          ? "Player mask: waiting for video…"
+          : "Player mask: hidden",
+      );
+      return;
+    }
+
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const row = rowAtPlaybackTime(video.currentTime, videoFps, maskRows);
+    if (!row?.mask_rle) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      lastPaintedFrameRef.current = null;
+      setMaskStatus(
+        jerseyNumber > 0
+          ? `Player mask: no overlay at ${video.currentTime.toFixed(1)}s (jersey ${jerseyNumber})`
+          : `Player mask: no overlay at ${video.currentTime.toFixed(1)}s`,
+      );
+      return;
+    }
+
+    if (lastPaintedFrameRef.current === row.frame) {
+      return;
+    }
+    lastPaintedFrameRef.current = row.frame;
+
+    const mh = Math.round(row.mask_rle.size[0]);
+    const mw = Math.round(row.mask_rle.size[1]);
+
+    if (canvas.width !== vw || canvas.height !== vh) {
+      canvas.width = vw;
+      canvas.height = vh;
+    }
+
+    const mask = decodeMaskRle(row.mask_rle);
+    if (mask.length !== mw * mh) {
+      ctx.clearRect(0, 0, vw, vh);
+      return;
+    }
+
+    drawMaskOnCanvasScaled(ctx, mask, mw, mh, vw, vh);
+    const src = row.segment_source ?? "sam";
+    setMaskStatus(
+      `Player mask: on at ${video.currentTime.toFixed(1)}s (frame ${row.frame}, ${src})` +
+        (jerseyNumber > 0 ? `, jersey ${jerseyNumber}` : ""),
+    );
+  }, [maskRows, showMask, videoFps, hasMasks, jerseyNumber]);
+
+  const schedulePaint = useCallback(() => {
+    if (rafRef.current !== null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      paintMask();
+    });
+  }, [paintMask]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onFrame = () => schedulePaint();
+    video.addEventListener("timeupdate", onFrame);
+    video.addEventListener("seeked", onFrame);
+    video.addEventListener("loadeddata", onFrame);
+    video.addEventListener("loadedmetadata", onFrame);
+
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => schedulePaint())
+        : null;
+    ro?.observe(video);
+
+    schedulePaint();
+    return () => {
+      video.removeEventListener("timeupdate", onFrame);
+      video.removeEventListener("seeked", onFrame);
+      video.removeEventListener("loadeddata", onFrame);
+      video.removeEventListener("loadedmetadata", onFrame);
+      ro?.disconnect();
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, [schedulePaint, previewUrl, hasMasks]);
+
+  useEffect(() => {
+    lastPaintedFrameRef.current = null;
+    schedulePaint();
+  }, [schedulePaint, trackingRows, showMask]);
+
+  const openFilePicker = useCallback(() => {
+    inputRef.current?.click();
+  }, []);
+
+  const handleFileChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const selected = event.target.files?.[0];
+      event.target.value = "";
+
+      if (!selected) return;
+
+      if (!isValidVideoFile(selected)) {
+        setError(INVALID_VIDEO_MESSAGE);
+        onFileChange(null);
+        return;
+      }
+
+      setError(null);
+      onFileChange(selected);
+    },
+    [onFileChange],
+  );
+
+  const describedBy = [
+    file ? "video-filename" : null,
+    error ? "video-error" : null,
+    !file ? UPLOAD_HINT_ID : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const fileInputId = "legacy-video-file-input";
+
+  return (
+    <section className={styles.wrapper} aria-labelledby="video-upload-heading">
+      <h2 id="video-upload-heading" className="srOnly">
+        Video upload
+      </h2>
+      <input
+        id={fileInputId}
+        ref={inputRef}
+        type="file"
+        accept={VIDEO_ACCEPT}
+        className={styles.hiddenInput}
+        onChange={handleFileChange}
+        tabIndex={-1}
+      />
+
+      {previewUrl ? (
+        <div className={styles.previewContainer}>
+          <figure className={styles.videoFigure}>
+            <div className={styles.videoWrap}>
+              <video
+                ref={videoRef}
+                className={styles.preview}
+                src={previewUrl}
+                controls
+                aria-describedby={
+                  hasMasks ? "video-mask-status video-filename" : "video-filename"
+                }
+              />
+              {hasMasks && showMask && (
+                <canvas
+                  ref={canvasRef}
+                  className={styles.maskCanvas}
+                  role="img"
+                  aria-labelledby="video-mask-status"
+                />
+              )}
+            </div>
+            <figcaption id="video-filename" className={styles.fileName}>
+              {file?.name}
+            </figcaption>
+          </figure>
+          <p
+            id="video-mask-status"
+            className={styles.maskStatus}
+            role="status"
+            aria-live="polite"
+          >
+            {maskStatus}
+          </p>
+          {samStatus === "loading" && (
+            <p className={styles.maskHintLoading} role="status" aria-live="polite">
+              MobileSAM is loading in the backend (first health check or analyze may
+              take a moment).
+            </p>
+          )}
+          {samStatus === "error" && (
+            <p className={styles.maskHint} role="status" aria-live="polite">
+              {mobileSamHealth?.unavailable_reason ??
+                "MobileSAM failed to load — install timm and mobile_sam in the backend venv (see backend/weights/README.md), restart the API, then re-run Analyze."}
+            </p>
+          )}
+          {maskUnavailable && (
+            <p className={styles.maskHint} role="status" aria-live="polite">
+              {masksUnavailableReason ??
+                "Player mask overlay unavailable for this run — check jersey lock and re-run Analyze."}
+            </p>
+          )}
+          {hasMasks && (
+            <label className={styles.maskToggle}>
+              <input
+                type="checkbox"
+                checked={showMask}
+                onChange={(e) => setShowMask(e.target.checked)}
+              />
+              Show player mask
+            </label>
+          )}
+          <button
+            type="button"
+            className={styles.changeButton}
+            onClick={openFilePicker}
+            aria-describedby={describedBy || undefined}
+          >
+            Change video
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className={styles.panel}
+          onClick={openFilePicker}
+          aria-describedby={describedBy || undefined}
+        >
+          <span className={styles.label}>video upload</span>
+          <span id={UPLOAD_HINT_ID} className="srOnly">
+            MP4 or MOV only
+          </span>
+        </button>
+      )}
+
+      {error && (
+        <p id="video-error" className={styles.error} role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}

@@ -1,0 +1,8 @@
+# Jersey number classifier training (SoccerNet jersey-2023)
+
+torch>=2.0
+torchvision>=0.15.0
+SoccerNet>=0.1.60
+pyyaml>=6.0
+Pillow>=10.0
+tqdm>=4.66

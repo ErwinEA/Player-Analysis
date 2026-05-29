@@ -1,0 +1,8 @@
+test/
+output/
+weights/*.pt
+weights/*.pth
+weights/*.onnx
+data/
+__pycache__/
+*.pyc

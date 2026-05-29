@@ -1,0 +1,14 @@
+ultralytics>=8.3.0
+lap>=0.5.12
+opencv-python-headless>=4.10.0
+numpy>=1.26.0
+insightface>=0.7.3
+onnxruntime>=1.17.0
+easyocr>=1.7.2
+rapidfuzz>=3.10
+torch>=2.0
+torchvision>=0.15.0
+SoccerNet>=0.1.60
+pyyaml>=6.0
+
+# torchreid (OSNet): run ./scripts/install_torchreid.sh after requirements.txt

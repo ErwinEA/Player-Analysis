@@ -1,0 +1,125 @@
+# Model weights (backend)
+
+Place trained checkpoints here or under `detetction_test/weights/` (preferred for shared tooling).
+
+## Ball detector (YOLOv8)
+
+| File | Purpose |
+|------|---------|
+| **`yolov8n_ball.pt`** | Soccer ball detection for target-player event stats |
+
+**Recommended path:**
+
+```
+detetction_test/weights/yolov8n_ball.pt
+```
+
+Or `backend/weights/yolov8n_ball.pt`, or:
+
+```bash
+export BALL_WEIGHTS=/absolute/path/to/yolov8n_ball.pt
+```
+
+The weights file is **not** committed to git. Place it manually on each machine. If missing, ball events are disabled (`events_unavailable_reason: no_ball_weights`) and the rest of the analyze pipeline still runs.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BALL_CONF` | `0.25` | Detection confidence threshold |
+| `BALL_IOU` | `0.5` | NMS IoU |
+| `BALL_KALMAN_GAP_MAX_FRAMES` | `22` | Max predicted frames before Kalman reset |
+| `ENABLE_BALL_EVENTS` | `1` | Set `0` to skip ball detection entirely |
+
+## Jersey number classifier (EfficientNet-B0)
+
+| File | Purpose |
+|------|---------|
+| **`jersey_number_b0.pt`** | Primary jersey digit classifier (1–99 + unknown) |
+| **`jersey_number_b0.json`** | Optional class-name sidecar |
+
+**Recommended path:**
+
+```
+detetction_test/weights/jersey_number_b0.pt
+```
+
+Or `backend/weights/jersey_number_b0.pt`, or `export JERSEY_WEIGHTS=/path/to/checkpoint.pt`.
+
+If weights are missing, the API falls back to **EasyOCR** digits-only on jersey crops.
+
+## OSNet ReID (legacy + detection pipeline)
+
+| File | Purpose |
+|------|---------|
+| **`osnet_x1_0_soccernet.pth`** | SoccerNet-trained OSNet-x1_0 appearance embeddings |
+
+**Recommended path:**
+
+```
+detetction_test/weights/osnet_x1_0_soccernet.pth
+```
+
+Alternative (this folder):
+
+```
+backend/weights/osnet_x1_0_soccernet.pth
+```
+
+Or set:
+
+```bash
+export REID_WEIGHTS=/absolute/path/to/osnet_x1_0_soccernet.pth
+```
+
+### Dependencies
+
+OSNet uses [torchreid](https://github.com/KaiyangZhou/deep-person-reid). Install from the detection test tree:
+
+```bash
+cd detetction_test
+./scripts/install_torchreid.sh   # if present
+pip install torch torchvision
+```
+
+## MobileSAM (legacy player segmentation)
+
+| File | Purpose |
+|------|---------|
+| **`mobile_sam.pt`** | MobileSAM checkpoint for per-frame mask on locked player |
+
+**Recommended path:**
+
+```
+backend/weights/mobile_sam.pt
+```
+
+Download from [MobileSAM weights](https://github.com/ChaoningZhang/MobileSAM/raw/master/weights/mobile_sam.pt).
+
+Install Python package:
+
+```bash
+pip install "git+https://github.com/ChaoningZhang/MobileSAM.git"
+```
+
+Or clone the repo and set `MOBILE_SAM_REPO=/path/to/MobileSAM`.
+
+### Environment
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SAM_ENABLED` | `1` | Set `0` to disable segmentation (bbox-only) |
+| `SAM_WEIGHTS` | `backend/weights/mobile_sam.pt` | Checkpoint path |
+| `SAM_DEVICE` | `auto` | `mps`, `cuda`, `cpu`, or `auto` |
+| `SAM_WARMUP_FRAMES` | `3` | Consecutive frames on locked track before SAM starts |
+| `REID_FALLBACK_THRESH` | `0.65` | ReID cosine min when lock track is missing |
+| `REID_FALLBACK_MARGIN` | `0.10` | Min gap vs runner-up ReID score for fallback |
+| `REID_FALLBACK_MAX_CENTER_FRAC` | `0.12` | Max bbox center jump (diag fraction) for fallback |
+| `SAM_MASK_SCALE` | `0.5` | Downscale masks before RLE in API (0.125–1.0) |
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REID_WEIGHTS` | see paths above | Checkpoint path |
+| `REID_ENABLED` | `1` | Set `0` to disable ReID |
+| `REID_LOCK_THRESHOLD` | `0.65` | Cosine similarity to lock by appearance |
+| `REID_MIN_SAMPLES` | `3` | Embeddings per track before ReID lock |
+| `REID_PROTOTYPE_MIN_CONF` | `0.40` | Min jersey OCR conf to seed appearance prototype |
+| `REID_GPU` | `0` | Set `1` for CUDA |

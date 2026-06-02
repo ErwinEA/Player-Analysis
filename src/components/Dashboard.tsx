@@ -60,7 +60,8 @@ function metricsFromEvents(
   base: PlayerMetrics,
 ): PlayerMetrics {
   const ec = result.event_counts;
-  if (!ec) return base;
+  // Backend sets event_counts and provenance=inferred together; match gameplay summary gating.
+  if (!ec || result.provenance !== "inferred") return base;
   return {
     ...base,
     goals: ec.Goal,

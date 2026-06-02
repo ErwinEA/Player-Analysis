@@ -32,7 +32,7 @@ type PitchCalibrationModalProps = {
   open: boolean;
   calibrationName?: string;
   frameIndex?: number;
-  /** Legacy upload: pick frame from this file and save calibration with the video. */
+  /** Uploaded video: pick frame from this file and save calibration with the video. */
   videoFile?: File | null;
   onClose: () => void;
   onSaved: (name: string) => void;
@@ -56,7 +56,7 @@ export function PitchCalibrationModal({
   onClose,
   onSaved,
 }: PitchCalibrationModalProps) {
-  const legacyMode = Boolean(videoFile);
+  const uploadMode = Boolean(videoFile);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -75,7 +75,7 @@ export function PitchCalibrationModal({
   const [previewing, setPreviewing] = useState(false);
   const [seekSeconds, setSeekSeconds] = useState(4);
   const [videoDuration, setVideoDuration] = useState(0);
-  const activeFrameIndex = legacyMode
+  const activeFrameIndex = uploadMode
     ? seekSecondsToFrameIndex(seekSeconds)
     : frameIndex;
 
@@ -207,7 +207,7 @@ export function PitchCalibrationModal({
     const run = async () => {
       try {
         let seek = frameIndexToSeekSeconds(frameIndex);
-        if (legacyMode && videoFile) {
+        if (uploadMode && videoFile) {
           const duration = await getVideoDuration(videoFile);
           if (cancelled) return;
           seek = suggestedCalibrationSeekSeconds(duration);
@@ -235,7 +235,7 @@ export function PitchCalibrationModal({
     calibrationName,
     frameIndex,
     videoFile,
-    legacyMode,
+    uploadMode,
     loadFrame,
     applyFrameData,
   ]);
@@ -243,7 +243,7 @@ export function PitchCalibrationModal({
   const handleSeekChange = useCallback(
     (seconds: number) => {
       setSeekSeconds(seconds);
-      if (!legacyMode || !videoFile) return;
+      if (!uploadMode || !videoFile) return;
       setLoading(true);
       setError(null);
       void loadFrame(seconds)
@@ -253,7 +253,7 @@ export function PitchCalibrationModal({
         })
         .finally(() => setLoading(false));
     },
-    [legacyMode, videoFile, loadFrame, applyFrameData],
+    [uploadMode, videoFile, loadFrame, applyFrameData],
   );
 
   useEffect(() => {
@@ -446,15 +446,20 @@ export function PitchCalibrationModal({
   );
 
   const handlePreview = async () => {
-    if (points.length < MIN_BOUNDARY_POINTS || legacyMode) return;
+    if (points.length < MIN_BOUNDARY_POINTS) return;
     setPreviewing(true);
     setError(null);
     try {
-      const result = await previewPitchCalibration({
+      const previewPayload: Parameters<typeof previewPitchCalibration>[0] = {
         name: calibrationName,
         frame_index: activeFrameIndex,
         image_boundary_points: boundaryPayload,
-      });
+      };
+      if (uploadMode && frameData) {
+        previewPayload.image_width = frameData.width;
+        previewPayload.image_height = frameData.height;
+      }
+      const result = await previewPitchCalibration(previewPayload);
       setPreviewData(result);
       setStep("preview");
       const confPct = Math.round(result.confidence * 100);
@@ -470,11 +475,11 @@ export function PitchCalibrationModal({
 
   const handleSave = async () => {
     if (points.length < MIN_BOUNDARY_POINTS) return;
-    if (!legacyMode && step !== "preview") return;
+    if (step !== "preview") return;
     setSaving(true);
     setError(null);
     try {
-      if (legacyMode && videoFile) {
+      if (uploadMode && videoFile) {
         await saveLegacyPitchCalibration(videoFile, {
           name: calibrationName,
           frame_index: activeFrameIndex,
@@ -510,10 +515,11 @@ export function PitchCalibrationModal({
       : null;
 
   const canPreview =
-    !legacyMode &&
     step === "place" &&
     points.length >= MIN_BOUNDARY_POINTS &&
-    !previewing;
+    !previewing &&
+    !loading &&
+    frameData != null;
 
   return (
     <div className={styles.backdrop} role="presentation" onClick={onClose}>
@@ -543,11 +549,11 @@ export function PitchCalibrationModal({
           derived once you have at least {MIN_BOUNDARY_POINTS} points. Use arrow
           keys to move the crosshair, then Enter or Space to place each point.
           Backspace removes the last point.
-          {legacyMode
+          {uploadMode
             ? " Choose a wide, unobstructed view of the pitch before marking points."
             : ` Frame ${activeFrameIndex} from the server default video.`}
         </p>
-        {legacyMode && videoDuration > 0 && (
+        {uploadMode && videoDuration > 0 && (
           <div className={styles.framePicker}>
             <label htmlFor="calibration-frame-seek" className={styles.frameLabel}>
               Video position (frame ~{activeFrameIndex})
@@ -654,7 +660,7 @@ export function PitchCalibrationModal({
           >
             Reset points
           </button>
-          {step === "place" && !legacyMode && (
+          {step === "place" && (
             <button
               type="button"
               className={styles.primary}
@@ -662,18 +668,6 @@ export function PitchCalibrationModal({
               disabled={!canPreview}
             >
               {previewing ? "Validating…" : "Validate & preview"}
-            </button>
-          )}
-          {step === "place" && legacyMode && (
-            <button
-              type="button"
-              className={styles.primary}
-              onClick={() => void handleSave()}
-              disabled={
-                points.length < MIN_BOUNDARY_POINTS || saving || previewing
-              }
-            >
-              {saving ? "Saving…" : "Save calibration"}
             </button>
           )}
           {step === "preview" && (

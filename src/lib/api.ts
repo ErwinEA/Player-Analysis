@@ -121,6 +121,8 @@ export async function previewPitchCalibration(payload: {
   name: string;
   frame_index: number;
   image_boundary_points: number[][];
+  image_width?: number;
+  image_height?: number;
 }): Promise<PitchCalibrationPreviewResponse> {
   const res = await fetch(`${getApiBaseUrl()}/api/pitch/calibration/preview`, {
     method: "POST",

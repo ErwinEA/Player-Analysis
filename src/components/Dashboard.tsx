@@ -10,7 +10,7 @@ import {
 } from "@/types/playerMetrics";
 import styles from "./Dashboard.module.css";
 import { Sidebar, type PlayerDetails } from "./Sidebar";
-import { LegacyVideoPanel } from "./LegacyVideoPanel";
+import { UploadAnalyzePanel } from "./UploadAnalyzePanel";
 import { HeatMapPanel } from "./HeatMapPanel";
 import { PlayerMetricsPanel } from "./PlayerMetricsPanel";
 import { GameplayAnalysisPanel } from "./GameplayAnalysisPanel";
@@ -142,14 +142,14 @@ export function Dashboard() {
     useState<GameplayAnalysis | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [calibrationOpen, setCalibrationOpen] = useState(false);
-  const [legacyCalibrationReady, setLegacyCalibrationReady] = useState(false);
+  const [uploadCalibrationReady, setUploadCalibrationReady] = useState(false);
   const [pitchTemplateKey, setPitchTemplateKey] = useState(0);
   const [mobileSamHealth, setMobileSamHealth] = useState<MobileSamHealth | null>(
     null,
   );
   const analyzeRunRef = useRef(0);
 
-  const legacyCalibrationKey = video
+  const videoCalibrationKey = video
     ? calibrationKeyFromFilename(video.name)
     : null;
 
@@ -216,8 +216,8 @@ export function Dashboard() {
     try {
       const response = await analyzeVideo(video, details, {
         calibrationName:
-          legacyCalibrationReady && legacyCalibrationKey
-            ? legacyCalibrationKey
+          uploadCalibrationReady && videoCalibrationKey
+            ? videoCalibrationKey
             : null,
       });
       if (runId !== analyzeRunRef.current) return;
@@ -248,8 +248,8 @@ export function Dashboard() {
     canAnalyze,
     video,
     details,
-    legacyCalibrationReady,
-    legacyCalibrationKey,
+    uploadCalibrationReady,
+    videoCalibrationKey,
   ]);
 
   const statusLabel =
@@ -333,12 +333,12 @@ export function Dashboard() {
       <div className={styles.body}>
         <Sidebar details={details} onChange={setDetails} />
         <main id="main-content" className={styles.main}>
-          <LegacyVideoPanel
+          <UploadAnalyzePanel
             file={video}
             onFileChange={setVideo}
             onCalibrate={() => setCalibrationOpen(true)}
-            calibrationReady={legacyCalibrationReady}
-            onCalibrationStatusChange={setLegacyCalibrationReady}
+            calibrationReady={uploadCalibrationReady}
+            onCalibrationStatusChange={setUploadCalibrationReady}
             trackingRows={
               result?.heatmap_source === "locked_target" &&
               result.target.method !== "none" &&
@@ -365,7 +365,7 @@ export function Dashboard() {
               calibrationSkippedReason={result?.calibration_skipped_reason}
               frameCap={result?.video.frame_cap ?? 5000}
               calibrationName={
-                result?.calibration_name ?? legacyCalibrationKey
+                result?.calibration_name ?? videoCalibrationKey
               }
               pitchTemplateKey={pitchTemplateKey}
             />
@@ -385,13 +385,13 @@ export function Dashboard() {
       </div>
       <PitchCalibrationModal
         open={calibrationOpen}
-        calibrationName={legacyCalibrationKey ?? "upload"}
+        calibrationName={videoCalibrationKey ?? "upload"}
         videoFile={video}
         frameIndex={100}
         onClose={() => setCalibrationOpen(false)}
         onSaved={() => {
           setPitchTemplateKey((k) => k + 1);
-          setLegacyCalibrationReady(true);
+          setUploadCalibrationReady(true);
         }}
       />
     </div>

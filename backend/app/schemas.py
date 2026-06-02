@@ -147,6 +147,16 @@ class PitchCalibrationSaveRequest(BaseModel):
     image_corners: list[list[float]] | None = None
     image_boundary_points: list[list[float]] | None = None
     point_labels: list[str] | None = None
+    """Frame size for preview when the calibration video is not on the server yet."""
+    image_width: int | None = Field(default=None, ge=1)
+    image_height: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def image_size_pair(self) -> PitchCalibrationSaveRequest:
+        w, h = self.image_width, self.image_height
+        if (w is None) != (h is None):
+            raise ValueError("image_width and image_height must both be set or both omitted.")
+        return self
 
     @model_validator(mode="after")
     def require_calibration_points(self) -> PitchCalibrationSaveRequest:

@@ -299,10 +299,49 @@ def _calibration_from_request(
     return cal, diag, frame, width, height
 
 
+def _preview_from_client_image_size(
+    name: str,
+    body: PitchCalibrationSaveRequest,
+) -> PitchCalibrationPreviewResponse:
+    assert body.image_width is not None and body.image_height is not None
+    try:
+        if body.image_boundary_points is not None:
+            _cal, diag = build_calibration_with_diagnostics(
+                name,
+                image_boundary_points=body.image_boundary_points,
+                video_path="",
+                frame_index=body.frame_index,
+                image_size=(body.image_width, body.image_height),
+            )
+        else:
+            points = body.image_corners or []
+            if len(points) == BOUNDARY_POINT_COUNT:
+                _cal, diag = build_calibration_with_diagnostics(
+                    name,
+                    image_boundary_points=points,
+                    video_path="",
+                    frame_index=body.frame_index,
+                    image_size=(body.image_width, body.image_height),
+                )
+            else:
+                _cal, diag = build_calibration_with_diagnostics(
+                    name,
+                    image_corners=points,
+                    video_path="",
+                    frame_index=body.frame_index,
+                    image_size=(body.image_width, body.image_height),
+                )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _diagnostics_to_preview_response(diag)
+
+
 def preview_pitch_calibration(
     body: PitchCalibrationSaveRequest,
 ) -> PitchCalibrationPreviewResponse:
     name = _validate_name(body.name)
+    if body.image_width is not None and body.image_height is not None:
+        return _preview_from_client_image_size(name, body)
     if stored := _stored_calibration_video_path(name):
         video_path = stored
     else:

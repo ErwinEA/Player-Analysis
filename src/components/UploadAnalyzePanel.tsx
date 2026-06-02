@@ -6,9 +6,9 @@ import { calibrationKeyFromFilename } from "@/lib/videoFrame";
 import type { MobileSamHealth } from "@/lib/api";
 import type { Row } from "@/types/analysis";
 import { VideoUploadPanel } from "./VideoUploadPanel";
-import styles from "./LegacyVideoPanel.module.css";
+import styles from "./UploadAnalyzePanel.module.css";
 
-type LegacyVideoPanelProps = {
+type UploadAnalyzePanelProps = {
   file: File | null;
   onFileChange: (file: File | null) => void;
   onCalibrate: () => void;
@@ -22,7 +22,7 @@ type LegacyVideoPanelProps = {
   mobileSamHealth?: MobileSamHealth | null;
 };
 
-export function LegacyVideoPanel({
+export function UploadAnalyzePanel({
   file,
   onFileChange,
   onCalibrate,
@@ -34,7 +34,7 @@ export function LegacyVideoPanel({
   jerseyNumber = 0,
   masksUnavailableReason = null,
   mobileSamHealth = null,
-}: LegacyVideoPanelProps) {
+}: UploadAnalyzePanelProps) {
   const [checkingCalibration, setCheckingCalibration] = useState(false);
 
   const calibrationKey = file ? calibrationKeyFromFilename(file.name) : null;
@@ -79,14 +79,14 @@ export function LegacyVideoPanel({
       {file && (
         <section
           className={styles.calibrationPrompt}
-          aria-labelledby="legacy-calibration-heading"
+          aria-labelledby="upload-calibration-heading"
         >
-          <h2 id="legacy-calibration-heading" className={styles.promptTitle}>
+          <h2 id="upload-calibration-heading" className={styles.promptTitle}>
             Pitch layout for heat map
           </h2>
           {checkingCalibration ? (
             <p
-              id="legacy-calibration-status"
+              id="upload-calibration-status"
               className={styles.promptText}
               role="status"
             >
@@ -94,7 +94,7 @@ export function LegacyVideoPanel({
             </p>
           ) : calibrationReady ? (
             <p
-              id="legacy-calibration-status"
+              id="upload-calibration-status"
               className={styles.promptText}
               role="status"
             >
@@ -104,22 +104,21 @@ export function LegacyVideoPanel({
             </p>
           ) : (
             <p
-              id="legacy-calibration-status"
+              id="upload-calibration-status"
               className={styles.promptText}
               role="status"
               aria-live="polite"
             >
-              Before analyzing, open calibration and mark ten points around the
-              pitch outline
-              on a frame with a clear wide view of the field. This maps player
-              positions onto the top-down pitch layout.
+              Before analyzing, open calibration and mark points around the
+              pitch outline on a frame with a clear wide view of the field.
+              Validate before save to check homography quality.
             </p>
           )}
           <button
             type="button"
             className={styles.calibrateButton}
             onClick={onCalibrate}
-            aria-describedby="legacy-calibration-status"
+            aria-describedby="upload-calibration-status"
           >
             {calibrationReady ? "Recalibrate pitch" : "Calibrate pitch layout"}
           </button>

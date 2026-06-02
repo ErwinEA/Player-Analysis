@@ -80,6 +80,33 @@ def test_save_with_six_points_includes_confidence(client):
     assert body["confidence"] >= 0.8
 
 
+def test_preview_with_client_image_size(client):
+    preview = client.post(
+        "/api/pitch/calibration/preview",
+        json={
+            "name": "upload_preview_only",
+            "frame_index": 0,
+            "image_width": 1280,
+            "image_height": 720,
+            "image_boundary_points": _wide_boundary(1280, 720, 6),
+        },
+    )
+    assert preview.status_code == 200
+    body = preview.json()
+    assert len(body["fitted_quad"]) == 4
+    assert body["probe_total"] >= 1
+
+
+def test_image_size_must_be_paired():
+    with pytest.raises(ValueError):
+        PitchCalibrationSaveRequest(
+            name="x",
+            frame_index=0,
+            image_width=1280,
+            image_boundary_points=_wide_boundary(1280, 720, 6),
+        )
+
+
 def test_three_points_rejected_by_schema():
     with pytest.raises(ValueError):
         PitchCalibrationSaveRequest(

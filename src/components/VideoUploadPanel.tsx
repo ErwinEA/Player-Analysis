@@ -209,7 +209,7 @@ export function VideoUploadPanel({
     .filter(Boolean)
     .join(" ");
 
-  const fileInputId = "legacy-video-file-input";
+  const fileInputId = "upload-video-file-input";
 
   return (
     <section className={styles.wrapper} aria-labelledby="video-upload-heading">

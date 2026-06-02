@@ -88,6 +88,35 @@ def test_locked_track_with_valid_box_returned():
     assert result == (7, [500.0, 300.0, 560.0, 470.0], False)
 
 
+def test_jersey_ocr_beats_wrong_locked_track(monkeypatch):
+    monkeypatch.setenv("SEG_JERSEY_OCR_PRIORITY", "1")
+    player_bbox = [500.0, 300.0, 560.0, 470.0]
+    wrong_bbox = [100.0, 300.0, 160.0, 470.0]
+    tracks = [
+        {"track_id": 1, "bbox": wrong_bbox},
+        {"track_id": 2, "bbox": player_bbox},
+    ]
+
+    class Ocr:
+        def read_number_detailed(self, frame, bbox, *, target_number=None):  # noqa: ANN001
+            if bbox == player_bbox:
+                return 23, 0.9, "23"
+            return None, 0.0, ""
+
+    result = resolve_target_bbox(
+        tracks,
+        lock_track_id=1,
+        reid_prototype=PROTO,
+        reid_extractor=_StubExtractor(),
+        frame=FRAME,
+        target_jersey=23,
+        ocr=Ocr(),
+    )
+    assert result is not None
+    assert result[0] == 2
+    assert result[1] == player_bbox
+
+
 def test_validity_helper_on_pitch_gate():
     cal = _cal()
     # A plausible player on the pitch passes both gates.

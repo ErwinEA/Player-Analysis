@@ -36,6 +36,7 @@ class TargetFrameSample:
     target_visible: bool
     segment_source: str | None = None
     target_px: tuple[float, float] | None = None
+    identification_type: str | None = None  # locked | ocr | reid | track
 
 
 @dataclass
@@ -72,6 +73,7 @@ class TargetFootTracker:
         visible: bool,
         segment_source: str | None,
         foot_px: tuple[float, float] | None = None,
+        identification_type: str | None = None,
     ) -> TargetFrameSample:
         gap_max = _env_int("TARGET_GAP_MAX_FRAMES", 22)
 
@@ -95,6 +97,7 @@ class TargetFootTracker:
                 target_visible=True,
                 segment_source=segment_source,
                 target_px=foot_px,
+                identification_type=identification_type,
             )
 
         if (
@@ -111,6 +114,7 @@ class TargetFootTracker:
                 target_visible=True,
                 segment_source=segment_source,
                 target_px=foot_px,
+                identification_type=identification_type,
             )
 
         if self._last_m is None:
@@ -119,6 +123,7 @@ class TargetFootTracker:
                 target_m=None,
                 target_visible=False,
                 segment_source=segment_source,
+                identification_type=None,
             )
 
         self._gap_frames += 1
@@ -128,6 +133,7 @@ class TargetFootTracker:
                 target_m=None,
                 target_visible=False,
                 segment_source=segment_source,
+                identification_type=None,
             )
 
         pred = (
@@ -140,6 +146,7 @@ class TargetFootTracker:
             target_visible=False,
             segment_source=segment_source,
             target_px=foot_px if foot_px is not None else self._last_px,
+            identification_type=identification_type,
         )
 
 

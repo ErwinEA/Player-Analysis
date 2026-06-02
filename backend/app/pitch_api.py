@@ -11,14 +11,16 @@ from fastapi.responses import FileResponse
 from backend.app.pipeline.pitch_homography import (
     BOUNDARY_LABELS,
     BOUNDARY_POINT_COUNT,
+    CalibrationDiagnostics,
     CORNER_LABELS,
-    build_calibration,
+    build_calibration_with_diagnostics,
     default_calibration_dir,
     load_calibration,
     render_pitch_template,
     save_calibration,
 )
 from backend.app.schemas import (
+    PitchCalibrationPreviewResponse,
     PitchCalibrationSaveRequest,
     PitchCalibrationSaveResponse,
     PitchFrameResponse,
@@ -32,11 +34,36 @@ _SAFE_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def calibration_key_from_filename(filename: str) -> str:
-    """Safe calibration name aligned with analyze upload key."""
+    """Safe calibration name for saving pitch JSON / legacy upload (not auto-used on analyze)."""
     stem = Path(filename).stem
     safe = re.sub(r"[^A-Za-z0-9_-]", "_", stem)
     safe = re.sub(r"_+", "_", safe).strip("_")
     return safe or "upload"
+
+
+def default_pitch_calibration_name() -> str:
+    import os
+
+    return os.environ.get("PITCH_CALIBRATION_NAME", "testmatch2").strip() or "testmatch2"
+
+
+def calibration_keys_for_run(*, explicit_key: str | None = None) -> tuple[str, ...]:
+    """Calibration lookup order shared by CLI and HTTP analyze.
+
+    Matches ``python -m backend.cli``: use ``PITCH_CALIBRATION_NAME`` (default
+    ``testmatch2``). Only when the client passes an explicit key (e.g. legacy UI
+    after saving pitch corners for that video) try that name first, then fall back
+  to the default.
+
+    Does **not** auto-select ``{video_stem}.json`` from the upload filename — that
+    caused analyze to diverge from CLI when a stale per-stem calibration existed.
+    """
+    default = default_pitch_calibration_name()
+    if explicit_key:
+        safe = _safe_name_or_none(explicit_key)
+        if safe and safe != default:
+            return (safe, default)
+    return (default,)
 
 
 _LEGACY_VIDEO_SUFFIXES = (".mp4", ".mov", ".m4v", ".webm")
@@ -218,16 +245,31 @@ def get_pitch_frame(
     )
 
 
-def _build_calibration_from_request(
+def _diagnostics_to_preview_response(
+    diag: CalibrationDiagnostics,
+) -> PitchCalibrationPreviewResponse:
+    return PitchCalibrationPreviewResponse(
+        confidence=diag.confidence,
+        coverage_pct=round(diag.coverage_pct * 100.0, 1),
+        probe_count=diag.probe_count,
+        probe_total=diag.probe_total,
+        warnings=list(diag.warnings),
+        fitted_quad=[list(c) for c in diag.fitted_quad],
+        mode=diag.mode,
+        probe_details=list(diag.probe_details),
+    )
+
+
+def _calibration_from_request(
     name: str,
     body: PitchCalibrationSaveRequest,
     *,
     video_path: Path,
-) -> tuple[object, int, int, int]:
+) -> tuple[object, CalibrationDiagnostics, object, int, int]:
     frame, width, height = _load_video_frame(video_path, body.frame_index)
     try:
         if body.image_boundary_points is not None:
-            cal = build_calibration(
+            cal, diag = build_calibration_with_diagnostics(
                 name,
                 image_boundary_points=body.image_boundary_points,
                 video_path=str(video_path),
@@ -237,7 +279,7 @@ def _build_calibration_from_request(
         else:
             points = body.image_corners or []
             if len(points) == BOUNDARY_POINT_COUNT:
-                cal = build_calibration(
+                cal, diag = build_calibration_with_diagnostics(
                     name,
                     image_boundary_points=points,
                     video_path=str(video_path),
@@ -245,7 +287,7 @@ def _build_calibration_from_request(
                     image_size=(width, height),
                 )
             else:
-                cal = build_calibration(
+                cal, diag = build_calibration_with_diagnostics(
                     name,
                     image_corners=points,
                     video_path=str(video_path),
@@ -254,13 +296,21 @@ def _build_calibration_from_request(
                 )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    from backend.app.pipeline.pitch_homography import validate_calibration_maps_to_pitch
+    return cal, diag, frame, width, height
 
-    try:
-        validate_calibration_maps_to_pitch(cal)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return cal, frame, width, height
+
+def preview_pitch_calibration(
+    body: PitchCalibrationSaveRequest,
+) -> PitchCalibrationPreviewResponse:
+    name = _validate_name(body.name)
+    if stored := _stored_calibration_video_path(name):
+        video_path = stored
+    else:
+        video_path = get_default_video_file()
+    _cal, diag, _frame, _w, _h = _calibration_from_request(
+        name, body, video_path=video_path
+    )
+    return _diagnostics_to_preview_response(diag)
 
 
 def save_pitch_calibration(body: PitchCalibrationSaveRequest) -> PitchCalibrationSaveResponse:
@@ -270,7 +320,7 @@ def save_pitch_calibration(body: PitchCalibrationSaveRequest) -> PitchCalibratio
         video_path = stored
     else:
         video_path = get_default_video_file()
-    cal, frame, width, height = _build_calibration_from_request(
+    cal, diag, frame, width, height = _calibration_from_request(
         name, body, video_path=video_path
     )
 
@@ -302,6 +352,9 @@ def save_pitch_calibration(body: PitchCalibrationSaveRequest) -> PitchCalibratio
         image_size=[width, height],
         template_url=f"/api/pitch/template?name={name}",
         calibration_url=f"/api/pitch/calibration?name={name}",
+        confidence=diag.confidence,
+        coverage_pct=round(diag.coverage_pct * 100.0, 1),
+        warnings=list(diag.warnings),
     )
 
 
@@ -328,7 +381,7 @@ def save_pitch_calibration_upload(
     out_dir = default_calibration_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    cal, frame, width, height = _build_calibration_from_request(
+    cal, diag, frame, width, height = _calibration_from_request(
         name, body, video_path=video_path
     )
 
@@ -359,4 +412,7 @@ def save_pitch_calibration_upload(
         image_size=[width, height],
         template_url=f"/api/pitch/template?name={name}",
         calibration_url=f"/api/pitch/calibration?name={name}",
+        confidence=diag.confidence,
+        coverage_pct=round(diag.coverage_pct * 100.0, 1),
+        warnings=list(diag.warnings),
     )

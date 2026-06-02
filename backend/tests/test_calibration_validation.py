@@ -31,20 +31,23 @@ def test_validate_calibration_maps_to_pitch_accepts_good_quad():
     validate_calibration_maps_to_pitch(cal)
 
 
-def test_validate_calibration_maps_to_pitch_rejects_testmatch2_file():
-    path = Path("backend/data/pitch_calibration/testmatch2.json")
-    if not path.is_file():
-        pytest.skip("testmatch2 calibration fixture missing")
-    cal = PitchCalibration.from_dict(json.loads(path.read_text()))
+def test_validate_calibration_maps_to_pitch_rejects_bad_quad():
+    w, h = 1280, 720
+    cal = build_calibration(
+        "bad_quad",
+        [[w * 0.1, h * 0.1], [w * 0.2, h * 0.1], [w * 0.2, h * 0.2], [w * 0.1, h * 0.2]],
+        image_size=(w, h),
+    )
     with pytest.raises(ValueError, match="does not map"):
         validate_calibration_maps_to_pitch(cal)
 
 
 def test_movement_stats_match_heatmap_bounds_filtering():
-    cal = PitchCalibration.from_dict(
-        json.loads(
-            Path("backend/data/pitch_calibration/testmatch2.json").read_text()
-        )
+    w, h = 1280, 720
+    cal = build_calibration(
+        "tiny_quad",
+        [[w * 0.1, h * 0.1], [w * 0.2, h * 0.1], [w * 0.2, h * 0.2], [w * 0.1, h * 0.2]],
+        image_size=(w, h),
     )
     rows = [
         Row(

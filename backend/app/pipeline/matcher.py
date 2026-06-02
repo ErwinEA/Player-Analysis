@@ -196,6 +196,8 @@ class TrackIdentityMatcher:
         best_id: int | None = None
         best_sim = 0.0
         for track_id, embs in self.reid_embeddings.items():
+            if not self.has_number_match.get(track_id):
+                continue
             if len(embs) < min_samples:
                 continue
             sim = cosine_similarity(mean_embedding(embs), self.reid_prototype)
@@ -260,6 +262,8 @@ class TrackIdentityMatcher:
         if lock is None:
             lock = self._try_lock_number()
         if lock is None:
+            lock = self._try_lock_color()
+        if lock is None:
             lock = self._try_lock_reid()
         if lock is not None:
             self.lock = lock
@@ -273,3 +277,51 @@ class TrackIdentityMatcher:
         if lock is not None:
             self.lock = lock
         return self.lock
+
+    def soft_identify_track(
+        self,
+        *,
+        prefer_track_id: int | None = None,
+        reid_threshold: float = 0.5,
+    ) -> tuple[int, str, float] | None:
+        """Best pre-lock track for ball events: (track_id, id_type, score).
+
+        Priority: continuity (prefer_track_id) → ReID → accumulated number OCR.
+        Voting-only tracks without a number match are excluded.
+        """
+        if prefer_track_id is not None and self.has_number_match.get(prefer_track_id):
+            return (
+                prefer_track_id,
+                "track",
+                float(self.number_votes.get(prefer_track_id, 0.0)),
+            )
+
+        if self.reid_prototype is not None:
+            from backend.app.pipeline.reid import cosine_similarity, mean_embedding
+
+            best_id: int | None = None
+            best_sim = 0.0
+            for track_id, embs in self.reid_embeddings.items():
+                if not self.has_number_match.get(track_id):
+                    continue
+                if not embs:
+                    continue
+                sim = cosine_similarity(mean_embedding(embs), self.reid_prototype)
+                if sim > best_sim:
+                    best_id = track_id
+                    best_sim = sim
+            if best_id is not None and best_sim >= reid_threshold:
+                return best_id, "reid", best_sim
+
+        best_id = None
+        best_score = 0.0
+        for track_id, num_score in self.number_votes.items():
+            if not self.has_number_match.get(track_id):
+                continue
+            if num_score > best_score:
+                best_id = track_id
+                best_score = num_score
+        if best_id is not None and best_score >= _number_min_conf():
+            return best_id, "track", best_score
+
+        return None

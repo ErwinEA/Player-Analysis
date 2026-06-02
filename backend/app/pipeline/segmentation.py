@@ -60,6 +60,30 @@ def reid_fallback_max_center_frac() -> float:
     return float(os.environ.get("REID_FALLBACK_MAX_CENTER_FRAC", "0.12"))
 
 
+def seg_jersey_ocr_priority() -> bool:
+    return os.environ.get("SEG_JERSEY_OCR_PRIORITY", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+
+
+def seg_jersey_ocr_min_conf() -> float:
+    return float(os.environ.get("SEG_JERSEY_OCR_MIN_CONF", "0.35"))
+
+
+def seg_color_fallback() -> bool:
+    return os.environ.get("SEG_COLOR_FALLBACK", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+
+
+def seg_color_min_score() -> float:
+    return float(os.environ.get("SEG_COLOR_MIN_SCORE", "0.08"))
+
+
 def sam_mask_scale() -> float:
     """Downscale factor for API mask RLE (1.0 = full resolution)."""
     raw = os.environ.get("SAM_MASK_SCALE", "0.5").strip()
@@ -120,6 +144,78 @@ def _resolve_device() -> str:
         return "cpu"
     except Exception:
         return "cpu"
+
+
+def _sam_allow_cpu_fallback() -> bool:
+    return os.environ.get("SAM_ALLOW_CPU_FALLBACK", "").strip() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _device_candidates(preferred: str) -> list[str]:
+    """Devices to try when loading MobileSAM (CPU only if explicitly allowed)."""
+    if _sam_allow_cpu_fallback():
+        if preferred == "cpu":
+            return ["cpu"]
+        if preferred in ("mps", "cuda"):
+            return [preferred, "cpu"]
+        return [preferred, "cpu"]
+    if preferred == "cpu":
+        return ["cpu"]
+    return [preferred]
+
+
+def _sam_mps_failure_hints(device: str, exc: Exception) -> str:
+    return (
+        f"MobileSAM failed on {device}: {exc}. "
+        "On Apple Silicon use SAM_DEVICE=mps (Metal GPU, typically 5–10× faster than CPU). "
+        "Requires macOS 14+, PyTorch with MPS, and running outside a sandboxed environment "
+        "(restart the terminal/IDE if MPS was unavailable at first import). "
+        "To allow silent CPU fallback set SAM_ALLOW_CPU_FALLBACK=1."
+    )
+
+
+def log_runtime_devices() -> None:
+    """Log accelerator availability once at process start (uvicorn / CLI)."""
+    from backend.app.pipeline.inference_device import (
+        cuda_available,
+        mps_available,
+        resolve_torch_device_str,
+        resolve_ultralytics_device,
+        torch_device_label,
+    )
+    from backend.app.pipeline.jersey_number import resolve_jersey_device_str
+
+    try:
+        import torch
+    except ImportError:
+        logger.warning("PyTorch not installed — SAM and classifiers use CPU only")
+        return
+
+    sam_resolved = _resolve_device()
+    jersey_resolved = resolve_jersey_device_str()
+    yolo_resolved = str(resolve_ultralytics_device())
+    reid_resolved = resolve_torch_device_str(env_key="INFERENCE_DEVICE")
+
+    logger.info(
+        "Runtime devices — torch=%s cuda=%s mps=%s | "
+        "SAM %s (candidates=%s, cpu_fallback=%s) | "
+        "jersey %s | YOLO %s | ReID %s",
+        torch.__version__,
+        cuda_available(),
+        mps_available(),
+        torch_device_label(os.environ.get("SAM_DEVICE"), sam_resolved),
+        _device_candidates(sam_resolved),
+        _sam_allow_cpu_fallback(),
+        torch_device_label(os.environ.get("JERSEY_CLS_DEVICE"), jersey_resolved),
+        torch_device_label(
+            os.environ.get("YOLO_DEVICE") or os.environ.get("INFERENCE_DEVICE"),
+            yolo_resolved,
+        ),
+        torch_device_label(os.environ.get("INFERENCE_DEVICE"), reid_resolved),
+    )
 
 
 def foot_from_mask(mask: np.ndarray) -> tuple[float, float] | None:
@@ -343,6 +439,7 @@ def mobile_sam_status() -> dict[str, object]:
         "weights_found": weights is not None,
         "weights_path": str(weights) if weights is not None else None,
         "loaded": _segmenter is not None,
+        "device": _segmenter.device if _segmenter is not None else None,
         "unavailable": _segmenter_unavailable,
         "unavailable_reason": _segmenter_unavailable_reason,
         "status": status,
@@ -383,17 +480,38 @@ def get_mobile_sam_segmenter() -> MobileSamSegmenter | None:
         _segmenter_unavailable = True
         _segmenter_unavailable_reason = reason
         return None
-    try:
-        device = _resolve_device()
-        _segmenter = MobileSamSegmenter(str(weights), device)
-        logger.info("MobileSAM loaded from %s on %s", weights, device)
-        return _segmenter
-    except Exception as exc:
-        reason = f"MobileSAM load failed: {exc}"
+    preferred = _resolve_device()
+    last_exc: Exception | None = None
+    candidates = _device_candidates(preferred)
+    for device in candidates:
+        try:
+            _segmenter = MobileSamSegmenter(str(weights), device)
+            logger.info("MobileSAM loaded from %s on %s", weights, device)
+            if device != preferred and _sam_allow_cpu_fallback():
+                logger.warning(
+                    "MobileSAM fell back from requested %s to %s (SAM_ALLOW_CPU_FALLBACK=1)",
+                    preferred,
+                    device,
+                )
+            return _segmenter
+        except Exception as exc:
+            last_exc = exc
+            if device == preferred and len(candidates) == 1:
+                logger.error("%s", _sam_mps_failure_hints(device, exc))
+            else:
+                logger.warning("MobileSAM load failed on %s: %s", device, exc)
+    reason = (
+        _sam_mps_failure_hints(candidates[-1], last_exc)
+        if last_exc is not None and len(candidates) == 1
+        else f"MobileSAM load failed: {last_exc}"
+    )
+    if len(candidates) == 1:
+        logger.error("%s", reason)
+    else:
         logger.warning("%s", reason)
-        _segmenter_unavailable = True
-        _segmenter_unavailable_reason = reason
-        return None
+    _segmenter_unavailable = True
+    _segmenter_unavailable_reason = reason
+    return None
 
 
 def is_valid_reid_candidate_bbox(
@@ -428,6 +546,66 @@ def is_valid_reid_candidate_bbox(
     return True
 
 
+def _resolve_by_jersey_ocr(
+    tracks: list[dict],
+    frame: NDArray,
+    *,
+    target_jersey: int,
+    ocr: object,
+    lock_track_id: int,
+    frame_shape: tuple[int, ...],
+    calibration: PitchCalibration | None,
+) -> tuple[int, list[float], bool] | None:
+    """Prefer the track whose kit OCR reads the target jersey this frame."""
+    min_conf = seg_jersey_ocr_min_conf()
+    hits: list[tuple[float, int, list[float]]] = []
+    for tr in tracks:
+        tid = int(tr["track_id"])
+        bbox = list(tr["bbox"])
+        # Jersey read is the authority here; skip homography on-pitch gate so
+        # broadcast close-ups still segment the correct player.
+        if not is_valid_person_bbox(bbox, frame_shape):
+            continue
+        num, conf, _ = ocr.read_number_detailed(
+            frame, bbox, target_number=target_jersey
+        )
+        if num == target_jersey and conf >= min_conf:
+            hits.append((conf, tid, bbox))
+    if not hits:
+        return None
+    hits.sort(key=lambda x: (-x[0], 0 if x[1] == lock_track_id else 1))
+    _conf, best_id, best_bbox = hits[0]
+    return best_id, best_bbox, best_id != lock_track_id
+
+
+def _resolve_by_kit_color(
+    tracks: list[dict],
+    frame: NDArray,
+    *,
+    primary_hex: str,
+    secondary_hex: str,
+    lock_track_id: int,
+    frame_shape: tuple[int, ...],
+) -> tuple[int, list[float], bool] | None:
+    from backend.app.pipeline.color import jersey_color_score
+
+    min_score = seg_color_min_score()
+    hits: list[tuple[float, int, list[float]]] = []
+    for tr in tracks:
+        tid = int(tr["track_id"])
+        bbox = list(tr["bbox"])
+        if not is_valid_person_bbox(bbox, frame_shape):
+            continue
+        score = jersey_color_score(frame, bbox, primary_hex, secondary_hex)
+        if score >= min_score:
+            hits.append((score, tid, bbox))
+    if not hits:
+        return None
+    hits.sort(key=lambda x: (-x[0], 0 if x[1] == lock_track_id else 1))
+    _score, best_id, best_bbox = hits[0]
+    return best_id, best_bbox, best_id != lock_track_id
+
+
 def resolve_target_bbox(
     tracks: list[dict],
     lock_track_id: int,
@@ -439,9 +617,47 @@ def resolve_target_bbox(
     frame_width: int = 0,
     frame_height: int = 0,
     calibration: PitchCalibration | None = None,
+    target_jersey: int | None = None,
+    ocr: object | None = None,
+    kit_primary: str | None = None,
+    kit_secondary: str | None = None,
 ) -> tuple[int, list[float], bool] | None:
     """Return (track_id, bbox, is_reid_fallback) for locked or ReID fallback track."""
     frame_shape = frame.shape[:2]
+    if (
+        seg_jersey_ocr_priority()
+        and target_jersey is not None
+        and target_jersey > 0
+        and ocr is not None
+    ):
+        jersey_pick = _resolve_by_jersey_ocr(
+            tracks,
+            frame,
+            target_jersey=target_jersey,
+            ocr=ocr,
+            lock_track_id=lock_track_id,
+            frame_shape=frame_shape,
+            calibration=calibration,
+        )
+        if jersey_pick is not None:
+            return jersey_pick
+
+    if (
+        seg_color_fallback()
+        and kit_primary
+        and kit_secondary
+    ):
+        color_pick = _resolve_by_kit_color(
+            tracks,
+            frame,
+            primary_hex=kit_primary,
+            secondary_hex=kit_secondary,
+            lock_track_id=lock_track_id,
+            frame_shape=frame_shape,
+        )
+        if color_pick is not None:
+            return color_pick
+
     by_id = {int(t["track_id"]): t for t in tracks}
     if lock_track_id in by_id:
         bbox = list(by_id[lock_track_id]["bbox"])

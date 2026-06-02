@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from backend.app.pipeline.inference_device import resolve_ultralytics_device
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
@@ -205,6 +207,7 @@ class BallDetector:
         self._reject_streak = 0
         self._last_cx_px = 0.0
         self._last_cy_px = 0.0
+        self._device = resolve_ultralytics_device()
 
         if resolved is None:
             logger.warning(
@@ -219,6 +222,7 @@ class BallDetector:
             self._model = YOLO(resolved)
             self.available = True
             self.weights = resolved
+            logger.info("BallDetector YOLO on device=%s", self._device)
         except Exception as exc:
             logger.warning("Failed to load ball YOLO weights %s: %s", resolved, exc)
             self.available = False
@@ -242,6 +246,7 @@ class BallDetector:
             frame_bgr,
             conf=self.conf,
             iou=self.iou,
+            device=self._device,
             verbose=False,
         )[0]
         if result.boxes is None or len(result.boxes) == 0:

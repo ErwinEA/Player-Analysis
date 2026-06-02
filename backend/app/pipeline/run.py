@@ -39,6 +39,7 @@ from backend.app.schemas import (
     HeatmapResult,
     MovementStats as MovementStatsSchema,
     PlayerDetails,
+    InferredBallEvent,
     PlayerEventCounts,
     Row,
     TargetMatch,
@@ -74,10 +75,27 @@ def _max_frames() -> int:
     return min(max(1, value), MAX_FRAMES_ENV_CAP)
 
 
+def _frame_start() -> int:
+    """Skip leading frames (debug clips / late lock windows)."""
+    raw = os.environ.get("FRAME_START", "").strip()
+    if not raw:
+        return 0
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
+
+
 def _include_masks_in_api_response() -> bool:
     """Whether /api/analyze should return mask_rle (overlay). Default on."""
     raw = os.environ.get("INCLUDE_MASKS_IN_API", "1").strip().lower()
     return raw not in ("0", "false", "no")
+
+
+def _kit_colors(details: PlayerDetails) -> tuple[str | None, str | None]:
+    if jersey_colors_configured(details):
+        return details.primaryJerseyColor, details.secondaryJerseyColor
+    return None, None
 
 
 def _rows_without_masks(rows: list[Row]) -> list[Row]:
@@ -103,7 +121,9 @@ def _rows_for_heatmap(
 
 
 def _pitch_calibration_name() -> str:
-    return os.environ.get("PITCH_CALIBRATION_NAME", "testmatch2")
+    from backend.app.pitch_api import default_pitch_calibration_name
+
+    return default_pitch_calibration_name()
 
 
 def _calibration_matches_video(
@@ -117,7 +137,9 @@ def _resolve_pitch_calibration(
     *,
     calibration_key: str | None,
 ) -> tuple[PitchCalibration | None, str | None]:
-    return resolve_calibration(calibration_key, _pitch_calibration_name())
+    from backend.app.pitch_api import calibration_keys_for_run
+
+    return resolve_calibration(*calibration_keys_for_run(explicit_key=calibration_key))
 
 
 def _ball_events_enabled() -> bool:
@@ -256,6 +278,10 @@ def _foot_from_locked_bbox(
     reid_extractor,
     width: int,
     height: int,
+    target_jersey: int | None = None,
+    ocr: object | None = None,
+    kit_primary: str | None = None,
+    kit_secondary: str | None = None,
 ) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
     """Foot pixel/metre from locked track bbox when SAM foot is unavailable."""
     bbox: list[float] | None = list(last_seg_bbox) if last_seg_bbox is not None else None
@@ -270,6 +296,10 @@ def _foot_from_locked_bbox(
             frame_width=width,
             frame_height=height,
             calibration=calibration,
+            target_jersey=target_jersey,
+            ocr=ocr,
+            kit_primary=kit_primary,
+            kit_secondary=kit_secondary,
         )
         if resolved is not None:
             _, bbox, _ = resolved
@@ -367,6 +397,51 @@ def _append_target_row(
     )
 
 
+def _scan_jersey_for_ball_events(
+    *,
+    frame,
+    frame_idx: int,
+    tracks: list,
+    track_frame_count: dict[int, int],
+    track_min_age: int,
+    ocr: JerseyOCR,
+    target_jersey: int,
+    ocr_every: int,
+    last_ocr_frame: dict[int, int],
+    frame_ocr_match: tuple[int, float] | None,
+) -> tuple[int, float] | None:
+    """Extra jersey OCR pass for ball-event soft ID (pre-lock windows).
+
+    The identity ``analyze`` path can miss frames between OCR intervals; this
+    scans mature tracks when we still need a ball-foot anchor before hard lock.
+    """
+    if frame_ocr_match is not None or target_jersey <= 0:
+        return frame_ocr_match
+    if frame_idx % ocr_every != 0:
+        return frame_ocr_match
+    from backend.app.pipeline.segmentation import seg_jersey_ocr_min_conf
+
+    min_conf = seg_jersey_ocr_min_conf()
+    best: tuple[int, float] | None = None
+    for tr in tracks:
+        track_id = int(tr["track_id"])
+        if track_frame_count.get(track_id, 0) < track_min_age:
+            continue
+        if frame_idx - last_ocr_frame.get(track_id, -ocr_every) < ocr_every:
+            continue
+        bbox = tr["bbox"]
+        num, num_conf, _ = ocr.read_number_detailed(
+            frame,
+            bbox,
+            target_number=target_jersey,
+        )
+        last_ocr_frame[track_id] = frame_idx
+        if num == target_jersey and num_conf >= min_conf:
+            if best is None or num_conf > best[1]:
+                best = (track_id, num_conf)
+    return best
+
+
 def run_pipeline(
     video_path: str,
     details: PlayerDetails,
@@ -409,6 +484,8 @@ def run_pipeline(
         segmentation_started_at_frame: int | None = None
         last_seg_bbox: list[float] | None = None
         frame_cap = _max_frames()
+        frame_start = _frame_start()
+        kit_primary, kit_secondary = _kit_colors(details)
 
         calibration_skipped_reason: str | None = None
         calibration, matched_cal_name = _resolve_pitch_calibration(
@@ -438,10 +515,17 @@ def run_pipeline(
         # Lock windows bounded by scene cuts; archived (not discarded) on each cut so
         # the best/longest epoch is analysed instead of whatever happens to be last.
         epochs: list = []
-        epoch_start_frame = 0
+        epoch_start_frame = frame_start
+        ball_carry_track_id: int | None = None
+
+        while frame_idx < frame_start:
+            ok, _ = cap.read()
+            if not ok:
+                break
+            frame_idx += 1
 
         while True:
-            if frame_idx >= frame_cap:
+            if frame_idx >= frame_start + frame_cap:
                 break
             ok, frame = cap.read()
             if not ok:
@@ -478,6 +562,7 @@ def run_pipeline(
                     target_tracker.reset()
                 ball_states = []
                 target_samples = []
+                ball_carry_track_id = None
                 logger.info("Scene cut at frame %s — tracker/lock reset", frame_idx)
 
             skip_ball = scene_detector.is_suppressed
@@ -489,6 +574,7 @@ def run_pipeline(
             this_frame_foot_px = None
             this_frame_target_visible = False
             this_frame_seg_source = None
+            frame_ocr_match: tuple[int, float] | None = None
 
             dets = detector(frame)
             tracks = tracker.update(dets, frame)
@@ -550,6 +636,20 @@ def run_pipeline(
                         matcher.observe_name(track_id, name, name_conf)
                         if num_conf > 0:
                             last_ocr_conf[track_id] = num_conf
+                        from backend.app.pipeline.segmentation import (
+                            seg_jersey_ocr_min_conf,
+                        )
+
+                        if (
+                            num == details.jerseyNumber
+                            and num_conf >= seg_jersey_ocr_min_conf()
+                            and details.jerseyNumber > 0
+                        ):
+                            if (
+                                frame_ocr_match is None
+                                or num_conf > frame_ocr_match[1]
+                            ):
+                                frame_ocr_match = (track_id, num_conf)
 
                         crop_path = ocr_debug.save_crop(
                             frame_idx,
@@ -607,6 +707,19 @@ def run_pipeline(
 
             # Warmup: target visible if locked track OR ReID fallback finds them.
             lock = matcher.lock
+            if enable_ball and not skip_ball and lock is None:
+                frame_ocr_match = _scan_jersey_for_ball_events(
+                    frame=frame,
+                    frame_idx=frame_idx,
+                    tracks=tracks,
+                    track_frame_count=track_frame_count,
+                    track_min_age=track_min_age,
+                    ocr=ocr,
+                    target_jersey=details.jerseyNumber,
+                    ocr_every=ocr_every,
+                    last_ocr_frame=last_ocr_frame,
+                    frame_ocr_match=frame_ocr_match,
+                )
             if lock is not None:
                 seg_state.acquire_lock(lock.track_id)
                 target_visible = resolve_target_bbox(
@@ -619,6 +732,10 @@ def run_pipeline(
                     frame_width=width,
                     frame_height=height,
                     calibration=calibration,
+                    target_jersey=details.jerseyNumber,
+                    ocr=ocr,
+                    kit_primary=kit_primary,
+                    kit_secondary=kit_secondary,
                 )
                 if target_visible is not None:
                     seg_state.record_visible_frame(frame_idx)
@@ -640,6 +757,10 @@ def run_pipeline(
                     frame_width=width,
                     frame_height=height,
                     calibration=calibration,
+                    target_jersey=details.jerseyNumber,
+                    ocr=ocr,
+                    kit_primary=kit_primary,
+                    kit_secondary=kit_secondary,
                 )
                 if resolved is not None:
                     seg_tid, seg_bbox, is_reid_fb = resolved
@@ -690,6 +811,20 @@ def run_pipeline(
                         matcher.observe_name(seg_tid, name, name_conf)
                         if num_conf > 0:
                             last_ocr_conf[seg_tid] = num_conf
+                        from backend.app.pipeline.segmentation import (
+                            seg_jersey_ocr_min_conf,
+                        )
+
+                        if (
+                            num == details.jerseyNumber
+                            and num_conf >= seg_jersey_ocr_min_conf()
+                            and details.jerseyNumber > 0
+                        ):
+                            if (
+                                frame_ocr_match is None
+                                or num_conf > frame_ocr_match[1]
+                            ):
+                                frame_ocr_match = (seg_tid, num_conf)
 
                     player_num = (
                         details.jerseyNumber if details.jerseyNumber > 0 else None
@@ -751,6 +886,10 @@ def run_pipeline(
                         frame_width=width,
                         frame_height=height,
                         calibration=calibration,
+                        target_jersey=details.jerseyNumber,
+                        ocr=ocr,
+                        kit_primary=kit_primary,
+                        kit_secondary=kit_secondary,
                     )
                     if resolved is not None:
                         _, bbox, _ = resolved
@@ -770,6 +909,7 @@ def run_pipeline(
 
                     ball_detector = BallDetector(fps=fps)
                     target_tracker = TargetFootTracker()
+                ball_id_type: str | None = "locked" if lock is not None else None
                 if lock is not None and this_frame_foot_px is None:
                     foot_px, foot_m = _foot_from_locked_bbox(
                         lock=lock,
@@ -781,6 +921,10 @@ def run_pipeline(
                         reid_extractor=reid_extractor,
                         width=width,
                         height=height,
+                        target_jersey=details.jerseyNumber,
+                        ocr=ocr,
+                        kit_primary=kit_primary,
+                        kit_secondary=kit_secondary,
                     )
                     if foot_px is not None:
                         this_frame_foot_px = foot_px
@@ -789,10 +933,28 @@ def run_pipeline(
                         if this_frame_seg_source is None:
                             this_frame_seg_source = "bbox_track"
                             this_frame_target_visible = True
+                elif lock is None and calibration is not None:
+                    from backend.app.pipeline.ball_events.target_resolve import (
+                        resolve_ball_event_target,
+                    )
+
+                    ball_obs, ball_carry_track_id = resolve_ball_event_target(
+                        tracks=tracks,
+                        matcher=matcher,
+                        lock=None,
+                        calibration=calibration,
+                        frame_shape=frame.shape,
+                        frame_ocr_match=frame_ocr_match,
+                        carry_track_id=ball_carry_track_id,
+                    )
+                    if ball_obs is not None:
+                        this_frame_foot_px = ball_obs.foot_px
+                        this_frame_foot_m = ball_obs.foot_m
+                        this_frame_target_visible = ball_obs.target_visible
+                        this_frame_seg_source = ball_obs.segment_source
+                        ball_id_type = ball_obs.identification_type
                 if ball_detector.available:
-                    anchor_px = None
-                    if lock is not None:
-                        anchor_px = this_frame_foot_px or last_anchor_foot_px
+                    anchor_px = this_frame_foot_px or last_anchor_foot_px
                     raw = ball_detector.detect(frame, near_px=anchor_px)
                     if this_frame_foot_px is not None:
                         last_anchor_foot_px = this_frame_foot_px
@@ -806,7 +968,6 @@ def run_pipeline(
                         )
                     if (
                         ball_debug_dir is not None
-                        and lock is not None
                         and this_frame_foot_px is not None
                         and raw is not None
                     ):
@@ -821,20 +982,18 @@ def run_pipeline(
                             target_m=this_frame_foot_m,
                             ball_m=_ball_state.pitch_m or _ball_state.smooth_m,
                         )
-                if (
-                    target_tracker is not None
-                    and calibration is not None
-                    and lock is not None
-                ):
-                    target_samples.append(
-                        target_tracker.observe(
-                            frame_idx,
-                            this_frame_foot_m,
-                            visible=this_frame_target_visible,
-                            segment_source=this_frame_seg_source,
-                            foot_px=this_frame_foot_px,
+                if target_tracker is not None and calibration is not None:
+                    if lock is not None or ball_id_type is not None:
+                        target_samples.append(
+                            target_tracker.observe(
+                                frame_idx,
+                                this_frame_foot_m,
+                                visible=this_frame_target_visible,
+                                segment_source=this_frame_seg_source,
+                                foot_px=this_frame_foot_px,
+                                identification_type=ball_id_type,
+                            )
                         )
-                    )
 
             frame_idx += 1
 
@@ -909,6 +1068,7 @@ def run_pipeline(
         calibration_name: str | None = matched_cal_name if calibration else None
 
         event_counts: PlayerEventCounts | None = None
+        inferred_events: list[InferredBallEvent] | None = None
         ball_samples: int | None = None
         events_unavailable_reason: str | None = None
         provenance: str | None = None
@@ -919,18 +1079,34 @@ def run_pipeline(
                 events_unavailable_reason = "no_ball_weights"
             elif calibration is None:
                 events_unavailable_reason = "no_calibration"
-            elif not any(ep.locked_at_frame is not None for ep in epochs):
-                events_unavailable_reason = "no_lock"
             else:
                 from backend.app.pipeline.ball_events.run_events import (
+                    _epoch_analyzable,
                     run_events_multi,
                 )
 
-                event_counts, ball_samples, best_epoch = run_events_multi(
-                    epochs,
-                    fps=fps,
+                min_visible = int(
+                    os.environ.get("EPOCH_MIN_VISIBLE_FRAMES", "5") or "5"
                 )
-                provenance = "inferred"
+                if not any(
+                    _epoch_analyzable(ep, min_visible=min_visible) for ep in epochs
+                ):
+                    events_unavailable_reason = "no_lock"
+                else:
+                    event_counts, ball_samples, best_epoch, detected = (
+                        run_events_multi(epochs, fps=fps)
+                    )
+                    inferred_events = [
+                        InferredBallEvent(
+                            frame=ev.frame,
+                            kind=ev.kind,
+                            lock_confidence=ev.lock_confidence,  # type: ignore[arg-type]
+                            detection_phase=ev.detection_phase,
+                            possession_confidence=ev.confidence,
+                        )
+                        for ev in detected
+                    ]
+                    provenance = "inferred"
         elif not enable_ball:
             events_unavailable_reason = None
 
@@ -965,7 +1141,13 @@ def run_pipeline(
             heatmap_rows = [r for r in heatmap_rows if r.frame >= seg_start]
 
         keep_masks = include_masks_in_response or _include_masks_in_api_response()
-        api_rows = heatmap_rows if keep_masks else _rows_without_masks(heatmap_rows)
+        if include_masks_in_response:
+            # Overlay export: keep every SAM row, not only heatmap-scoped track rows.
+            api_rows = [r for r in rows if r.mask_rle is not None]
+        elif keep_masks:
+            api_rows = heatmap_rows
+        else:
+            api_rows = _rows_without_masks(heatmap_rows)
 
         mask_row_count = sum(1 for r in heatmap_rows if r.mask_rle is not None)
         masks_available = mask_row_count > 0
@@ -1040,6 +1222,7 @@ def run_pipeline(
             masks_unavailable_reason=masks_unavailable_reason,
             mask_row_count=mask_row_count,
             event_counts=event_counts,
+            inferred_events=inferred_events,
             provenance=provenance,  # type: ignore[arg-type]
             ball_samples=ball_samples,
             events_unavailable_reason=events_unavailable_reason,

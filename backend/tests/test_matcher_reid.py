@@ -13,6 +13,7 @@ def test_reid_lock_after_prototype():
     other = np.array([0.0, 1.0, 0.0], dtype=np.float32)
     target_embs = [proto, proto, proto]
     matcher.reid_prototype = proto
+    matcher.has_number_match[7] = True
     for emb in target_embs:
         matcher.observe_reid(7, emb)
     for emb in [other, other, other]:

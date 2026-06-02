@@ -102,6 +102,14 @@ class PlayerEventCounts(BaseModel):
     Drive: int = 0
 
 
+class InferredBallEvent(BaseModel):
+    frame: int
+    kind: str
+    lock_confidence: Literal["strong", "weak"]
+    detection_phase: str | None = None
+    possession_confidence: str | None = None
+
+
 class AnalyzeResponse(BaseModel):
     video: VideoMeta
     target: TargetMatch
@@ -115,6 +123,7 @@ class AnalyzeResponse(BaseModel):
     masks_unavailable_reason: str | None = None
     mask_row_count: int | None = None
     event_counts: PlayerEventCounts | None = None
+    inferred_events: list[InferredBallEvent] | None = None
     provenance: Literal["inferred"] | None = None
     ball_samples: int | None = None
     events_unavailable_reason: str | None = None
@@ -137,18 +146,47 @@ class PitchCalibrationSaveRequest(BaseModel):
     frame_index: int = Field(default=100, ge=0)
     image_corners: list[list[float]] | None = None
     image_boundary_points: list[list[float]] | None = None
+    point_labels: list[str] | None = None
 
     @model_validator(mode="after")
     def require_calibration_points(self) -> PitchCalibrationSaveRequest:
+        from backend.app.pipeline.pitch_homography import (
+            MAX_BOUNDARY_POINTS,
+            MIN_BOUNDARY_POINTS,
+        )
+
+        if self.point_labels:
+            raise ValueError("Labeled landmark calibration is not supported yet.")
         boundary = self.image_boundary_points
         corners = self.image_corners
-        if boundary is not None and len(boundary) == 10:
-            return self
+        if boundary is not None:
+            n = len(boundary)
+            if MIN_BOUNDARY_POINTS <= n <= MAX_BOUNDARY_POINTS:
+                return self
+            raise ValueError(
+                f"image_boundary_points must have {MIN_BOUNDARY_POINTS}–"
+                f"{MAX_BOUNDARY_POINTS} points, got {n}."
+            )
         if corners is not None and len(corners) in (4, 10):
             return self
         raise ValueError(
-            "Provide image_boundary_points (10) or image_corners (4 legacy, 10 outline)."
+            f"Provide image_boundary_points ({MIN_BOUNDARY_POINTS}–{MAX_BOUNDARY_POINTS}) "
+            "or image_corners (4 legacy, 10 outline)."
         )
+
+
+PitchCalibrationPreviewRequest = PitchCalibrationSaveRequest
+
+
+class PitchCalibrationPreviewResponse(BaseModel):
+    confidence: float
+    coverage_pct: float
+    probe_count: int
+    probe_total: int
+    warnings: list[str] = Field(default_factory=list)
+    fitted_quad: list[list[float]]
+    mode: str = "outline"
+    probe_details: list[dict] = Field(default_factory=list)
 
 
 class PitchCalibrationSaveResponse(BaseModel):
@@ -157,3 +195,6 @@ class PitchCalibrationSaveResponse(BaseModel):
     image_size: list[int]
     template_url: str
     calibration_url: str
+    confidence: float | None = None
+    coverage_pct: float | None = None
+    warnings: list[str] = Field(default_factory=list)

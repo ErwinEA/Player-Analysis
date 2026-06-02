@@ -71,6 +71,14 @@ export type PlayerEventCounts = {
   Drive: number;
 };
 
+export type InferredBallEvent = {
+  frame: number;
+  kind: string;
+  lock_confidence: "strong" | "weak";
+  detection_phase?: string | null;
+  possession_confidence?: string | null;
+};
+
 export type AnalyzeResponse = {
   video: VideoMeta;
   target: TargetMatch;
@@ -84,6 +92,7 @@ export type AnalyzeResponse = {
   masks_unavailable_reason?: string | null;
   mask_row_count?: number | null;
   event_counts?: PlayerEventCounts | null;
+  inferred_events?: InferredBallEvent[] | null;
   provenance?: "inferred" | null;
   ball_samples?: number | null;
   events_unavailable_reason?: string | null;

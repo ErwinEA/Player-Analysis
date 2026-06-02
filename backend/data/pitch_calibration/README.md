@@ -39,13 +39,24 @@ Under `backend/data/pitch_calibration/`:
 - `GET /api/pitch/calibration?name=testmatch2` — calibration metadata
 - `GET /api/videos/default` — stream server-hosted demo video
 - `GET /api/pitch/frame?name=testmatch2&frame=100` — JPEG frame for corner UI
-- `POST /api/pitch/calibration` — save four corners + regenerate template
+- `POST /api/pitch/calibration/preview` — validate outline (4–20 points) without saving; returns confidence, probes, coverage
+- `POST /api/pitch/calibration` — save outline (4–20 boundary points) + regenerate template; soft validation (warnings + confidence)
 - `POST /api/analyze/default` — analyze demo video without upload
 
 Install demo video: `python backend/scripts/install_default_video.py`
 - `POST /api/analyze` — includes `heatmap` (PNG base64 overlay) when a target is locked and calibration exists
 
-Calibration is resolved as `{video_stem}.json` first, then `PITCH_CALIBRATION_NAME` (default `testmatch2`).
+Analyze and CLI resolve calibration as `PITCH_CALIBRATION_NAME` (default `testmatch2`). The UI may pass `calibration_name` after you save corners for a specific upload (tries that JSON first, then the default). Analyze does **not** auto-pick `{video_stem}.json` from the filename alone.
+
+## Outline calibration (UI)
+
+1. Place **4–20** points clockwise on the visible pitch outline.
+2. Click **Validate & preview** — server returns confidence (0–100%), frame probes on-pitch (e.g. 3/5), and grid coverage %.
+3. **Save** even when confidence is low (narrow shots); warnings explain limitations.
+
+Hard reject (HTTP 400): fewer than 4 points, degenerate quad, or invalid geometry. Probe/coverage failures are warnings only.
+
+JSON may include optional `mode`, `confidence`, and `coverage_pct` metadata (backward-compatible with older files).
 
 ## Python usage
 

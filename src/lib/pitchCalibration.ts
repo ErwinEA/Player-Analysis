@@ -1,6 +1,8 @@
 /** Client mirror of backend decagon_to_quad for calibration preview. */
 
 export const BOUNDARY_POINT_COUNT = 10;
+export const MIN_BOUNDARY_POINTS = 4;
+export const MAX_BOUNDARY_POINTS = 20;
 
 export const BOUNDARY_CORNER_INDICES = [0, 3, 6, 9] as const;
 
@@ -91,6 +93,13 @@ export function legacyCornersToBoundary(corners: CalPoint[]): CalPoint[] {
     if (corners[i]) slots[idx] = corners[i];
   });
   return slots;
+}
+
+export function boundaryPointLabel(index: number): string {
+  if (index < BOUNDARY_LABELS.length) {
+    return BOUNDARY_LABELS[index];
+  }
+  return `Outline point ${index + 1}`;
 }
 
 export function isLegacyBoundaryOutline(points: CalPoint[]): boolean {

@@ -6,6 +6,11 @@ import math
 import os
 from dataclasses import dataclass
 
+from backend.app.pipeline.ball_events.identification import (
+    has_target_identification,
+    lock_confidence_for_id_type,
+    log_frame_evaluation,
+)
 from backend.app.pipeline.ball_events.possession import PossessionFrame, PossessionState
 from backend.app.pipeline.ball_events.timeline import FrameTimeline
 from backend.app.pipeline.pitch_homography import PITCH_LENGTH_M, PITCH_WIDTH_M
@@ -42,6 +47,8 @@ class DetectedEvent:
     frame: int
     kind: str  # Pass | Shot | Goal | Drive
     confidence: str
+    lock_confidence: str = "strong"  # strong | weak
+    detection_phase: str | None = None  # locked | ocr | reid | track
 
 
 def _ball_speed_m_s(ball, fps: float) -> float:
@@ -58,13 +65,14 @@ def _infer_attack_right(target_xs: list[float]) -> bool:
 
 
 def infer_attack_direction_label(
-    timeline: list[FrameTimeline], locked_at_frame: int
+    timeline: list[FrameTimeline],
+    locked_at_frame: int | None,
 ) -> str:
-    target_xs = [
-        e.target.target_m[0]
-        for e in timeline
-        if e.target.target_m is not None and e.frame >= locked_at_frame
-    ]
+    target_xs = []
+    for e in timeline:
+        ok, _, _ = has_target_identification(e.target, locked_at_frame)
+        if ok and e.target.target_m is not None:
+            target_xs.append(e.target.target_m[0])
     return "left_to_right" if _infer_attack_right(target_xs) else "right_to_left"
 
 
@@ -87,7 +95,7 @@ def detect_events(
     possession: list[PossessionFrame],
     *,
     fps: float,
-    locked_at_frame: int,
+    locked_at_frame: int | None,
     emitted_by_frame: dict[int, str] | None = None,
 ) -> list[DetectedEvent]:
     if len(timeline) != len(possession):
@@ -99,12 +107,14 @@ def detect_events(
     goal_window = _env_int("GOAL_WINDOW_FRAMES", int(fps * 3))
     drive_min_frames = _env_int("DRIVE_MIN_FRAMES", 15)
 
-    target_xs = [
-        e.target.target_m[0]
-        for e in timeline
-        if e.target.target_m is not None and e.frame >= locked_at_frame
-    ]
-    attack_right = _infer_attack_right(target_xs)
+    attack_right = _infer_attack_right(
+        [
+            e.target.target_m[0]
+            for e in timeline
+            if has_target_identification(e.target, locked_at_frame)[0]
+            and e.target.target_m is not None
+        ]
+    )
 
     events: list[DetectedEvent] = []
     last_event_frame: dict[str, int] = {}
@@ -117,10 +127,23 @@ def detect_events(
     drive_start: int | None = None
 
     for i, entry in enumerate(timeline):
-        if entry.frame < locked_at_frame:
+        identified, lock_tier, id_type = has_target_identification(
+            entry.target, locked_at_frame
+        )
+        if not identified:
+            prev_possessed = False
             continue
+
         pf = possession[i]
         possessed = pf.state in possessed_states and pf.confidence != "low"
+
+        ball_speed = _ball_speed_m_s(entry.ball, fps)
+        dist_m_val = None
+        if entry.target.target_m is not None and entry.ball.smooth_m is not None:
+            dist_m_val = math.hypot(
+                entry.target.target_m[0] - entry.ball.smooth_m[0],
+                entry.target.target_m[1] - entry.ball.smooth_m[1],
+            )
 
         if possessed and not prev_possessed:
             drive_start = entry.frame
@@ -133,6 +156,8 @@ def detect_events(
                             frame=drive_start,
                             kind=kind,
                             confidence=pf.confidence,
+                            lock_confidence=lock_tier or "weak",
+                            detection_phase=id_type,
                         )
                     )
                     last_event_frame[kind] = entry.frame
@@ -156,12 +181,28 @@ def detect_events(
                 kind = None
 
             if kind is not None and entry.frame - last_event_frame.get(kind, -9999) >= debounce:
+                ev_lock = lock_tier or lock_confidence_for_id_type(id_type) or "weak"
                 events.append(
-                    DetectedEvent(frame=entry.frame, kind=kind, confidence=conf)
+                    DetectedEvent(
+                        frame=entry.frame,
+                        kind=kind,
+                        confidence=conf,
+                        lock_confidence=ev_lock,
+                        detection_phase=id_type,
+                    )
                 )
                 last_event_frame[kind] = entry.frame
                 if emitted_by_frame is not None:
                     emitted_by_frame[entry.frame] = kind
+                log_frame_evaluation(
+                    frame=entry.frame,
+                    sample=entry.target,
+                    locked_at_frame=locked_at_frame,
+                    possessed=prev_possessed,
+                    ball_speed_m_s=ball_speed,
+                    dist_m=dist_m_val,
+                    event_kind=kind,
+                )
 
                 if kind == "Shot":
                     for j in range(i, min(i + goal_window, len(timeline))):
@@ -177,6 +218,8 @@ def detect_events(
                                         frame=later.frame,
                                         kind=gkind,
                                         confidence=conf,
+                                        lock_confidence=ev_lock,
+                                        detection_phase=id_type,
                                     )
                                 )
                                 last_event_frame[gkind] = later.frame

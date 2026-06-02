@@ -3,19 +3,20 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.pitch_api import (
-    calibration_key_from_filename,
     get_pitch_calibration,
     get_pitch_frame,
     legacy_calibration_video_dest,
     legacy_calibration_video_stored,
     normalize_calibration_name,
     pitch_template_response,
+    preview_pitch_calibration,
     save_pitch_calibration,
     save_pitch_calibration_upload,
 )
@@ -24,6 +25,7 @@ from backend.app.pipeline.run import run_pipeline
 from backend.app.pipeline.segmentation import mobile_sam_health
 from backend.app.schemas import (
     AnalyzeResponse,
+    PitchCalibrationPreviewResponse,
     PitchCalibrationSaveRequest,
     PitchCalibrationSaveResponse,
     PitchFrameResponse,
@@ -42,7 +44,19 @@ def _cors_origins() -> list[str]:
     return [o.strip() for o in raw.split(",") if o.strip()]
 
 
-app = FastAPI(title="Player Analysis Tracking API", version="0.1.0")
+@asynccontextmanager
+async def _app_lifespan(_app: FastAPI):
+    from backend.app.pipeline.segmentation import log_runtime_devices
+
+    log_runtime_devices()
+    yield
+
+
+app = FastAPI(
+    title="Player Analysis Tracking API",
+    version="0.1.0",
+    lifespan=_app_lifespan,
+)
 
 _cors_kwargs: dict = {
     "allow_origins": _cors_origins(),
@@ -120,6 +134,13 @@ def pitch_video_stored(name: str) -> dict[str, bool | str]:
     return {"name": safe, "stored": legacy_calibration_video_stored(safe)}
 
 
+@app.post("/api/pitch/calibration/preview", response_model=PitchCalibrationPreviewResponse)
+def pitch_calibration_preview(
+    body: PitchCalibrationSaveRequest,
+) -> PitchCalibrationPreviewResponse:
+    return preview_pitch_calibration(body)
+
+
 @app.post("/api/pitch/calibration", response_model=PitchCalibrationSaveResponse)
 def pitch_calibration_save(
     body: PitchCalibrationSaveRequest,
@@ -157,14 +178,23 @@ async def pitch_calibration_upload(
     )
     try:
         kwargs: dict = {"name": name, "frame_index": frame_index, "video_path": dest}
-        if len(corners) == 10:
+        from backend.app.pipeline.pitch_homography import (
+            MAX_BOUNDARY_POINTS,
+            MIN_BOUNDARY_POINTS,
+        )
+
+        n = len(corners)
+        if MIN_BOUNDARY_POINTS <= n <= MAX_BOUNDARY_POINTS:
             kwargs["image_boundary_points"] = corners
-        elif len(corners) == 4:
+        elif n == 4:
             kwargs["image_corners"] = corners
         else:
             raise HTTPException(
                 status_code=422,
-                detail="Calibration points must be 10 (boundary) or 4 (legacy corners).",
+                detail=(
+                    f"Calibration points must be {MIN_BOUNDARY_POINTS}–"
+                    f"{MAX_BOUNDARY_POINTS} (boundary) or 4 (legacy corners)."
+                ),
             )
         return save_pitch_calibration_upload(**kwargs)
     except HTTPException:
@@ -203,6 +233,7 @@ async def analyze_default_video(details: str = Form(...)) -> AnalyzeResponse:
 async def analyze(
     video: UploadFile = File(...),
     details: str = Form(...),
+    calibration_name: str | None = Form(None),
 ) -> AnalyzeResponse:
     try:
         player_details = PlayerDetails.model_validate_json(details)
@@ -224,13 +255,16 @@ async def analyze(
         if written == 0:
             raise HTTPException(status_code=422, detail="Uploaded video file is empty")
 
-        calibration_key = calibration_key_from_filename(
-            video.filename or "upload.mp4",
-        )
+        cal_key: str | None = None
+        if calibration_name and calibration_name.strip():
+            try:
+                cal_key = normalize_calibration_name(calibration_name.strip())
+            except HTTPException:
+                cal_key = None
         return run_pipeline(
             tmp_path,
             player_details,
-            calibration_key=calibration_key,
+            calibration_key=cal_key,
         )
     except HTTPException:
         raise

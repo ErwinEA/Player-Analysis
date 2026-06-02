@@ -74,6 +74,7 @@ def render(
     fps: float,
     out_path: Path,
     *,
+    frame_start: int = 0,
     max_frames: int | None,
 ) -> int:
     by_frame: dict[int, Row] = {}
@@ -94,6 +95,9 @@ def render(
         print(f"Could not open video: {video_path}", file=sys.stderr)
         return 1
 
+    if frame_start > 0:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_start)
+
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
     src_fps = float(cap.get(cv2.CAP_PROP_FPS) or fps)
@@ -106,11 +110,12 @@ def render(
         cap.release()
         return 1
 
-    frame_idx = 0
+    frame_idx = frame_start
+    end_frame = frame_start + max_frames if max_frames is not None else None
     drawn = 0
     try:
         while True:
-            if max_frames is not None and frame_idx >= max_frames:
+            if end_frame is not None and frame_idx >= end_frame:
                 break
             ok, frame = cap.read()
             if not ok:
@@ -119,6 +124,20 @@ def render(
             if row and row.mask_rle is not None:
                 mask = decode_mask_rle(row.mask_rle)
                 frame = _composite_mask(frame, mask)
+                if row.foot_x is not None and row.foot_y is not None:
+                    fx = int(row.foot_x * w)
+                    fy = int(row.foot_y * h)
+                    cv2.circle(frame, (fx, fy), 6, (0, 0, 255), -1)
+                if row.segment_source:
+                    cv2.putText(
+                        frame,
+                        str(row.segment_source),
+                        (10, 28),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (255, 255, 255),
+                        2,
+                    )
                 drawn += 1
             writer.write(frame)
             frame_idx += 1
@@ -155,7 +174,25 @@ def main() -> int:
         "--max-frames",
         type=int,
         default=None,
-        help="Cap frames written (default: full input read until EOF or MAX_FRAMES in pipeline)",
+        help="Cap output clip length (does not limit pipeline; use --pipeline-max-frames)",
+    )
+    parser.add_argument(
+        "--pipeline-max-frames",
+        type=int,
+        default=None,
+        help="Cap pipeline processing (sets MAX_FRAMES env, default 5000)",
+    )
+    parser.add_argument(
+        "--frame-start",
+        type=int,
+        default=None,
+        help="Output clip start frame; pipeline still runs from 0 unless --pipeline-frame-start",
+    )
+    parser.add_argument(
+        "--pipeline-frame-start",
+        type=int,
+        default=None,
+        help="Skip leading frames in pipeline only (sets FRAME_START)",
     )
     args = parser.parse_args()
 
@@ -165,6 +202,11 @@ def main() -> int:
     if not args.details.is_file():
         print(f"Details JSON not found: {args.details}", file=sys.stderr)
         return 1
+
+    if args.pipeline_frame_start is not None:
+        os.environ["FRAME_START"] = str(max(0, args.pipeline_frame_start))
+    if args.pipeline_max_frames is not None:
+        os.environ["MAX_FRAMES"] = str(max(1, args.pipeline_max_frames))
 
     if args.analyze_json is not None:
         if not args.analyze_json.is_file():
@@ -203,11 +245,14 @@ def main() -> int:
                 file=sys.stderr,
             )
 
+    frame_start = max(0, args.frame_start if args.frame_start is not None else 0)
+
     return render(
         args.video,
         rows,
         fps,
         args.output,
+        frame_start=frame_start,
         max_frames=args.max_frames,
     )
 

@@ -23,6 +23,8 @@ cd ..
 
 On first run, Ultralytics downloads `yolov8n.pt` automatically (unless you set `YOLO_WEIGHTS` to another path).
 
+**Model checkpoints (masks, jersey, ReID, ball):** see the [happy path weights checklist](weights/README.md#happy-path-checklist-full-post-apianalyze) in [weights/README.md](weights/README.md). Files are gitignored; copy or train them per machine.
+
 ## Environment variables
 
 | Variable | Default | Description |
@@ -54,9 +56,12 @@ On first run, Ultralytics downloads `yolov8n.pt` automatically (unless you set `
 | `JERSEY_TARGET_MIN_CONF` | `0.55` | Min prob on target jersey class (also requires agreement with argmax) |
 | `JERSEY_SOFT_MIN_CONF` | `0.25` | Soft classifier accept before OCR fallback |
 | `JERSEY_CLS_DEVICE` | `auto` | `cuda`, `mps`, `cpu`, or `auto` for classifier inference |
+| `INFERENCE_DEVICE` | `auto` | `mps`, `cuda`, `cpu`, or `auto` for YOLO + ReID (overridden by `YOLO_DEVICE` for detectors) |
+| `YOLO_DEVICE` | unset | Optional override for person/ball YOLO only |
 | `SAM_ENABLED` | `1` | Per-frame MobileSAM on locked player (`0` = bbox-only) |
 | `SAM_WEIGHTS` | `backend/weights/mobile_sam.pt` | MobileSAM checkpoint |
-| `SAM_DEVICE` | `auto` | `mps`, `cuda`, `cpu`, or `auto` |
+| `SAM_DEVICE` | `auto` | `mps`, `cuda`, `cpu`, or `auto` (no CPU fallback unless `SAM_ALLOW_CPU_FALLBACK=1`) |
+| `SAM_ALLOW_CPU_FALLBACK` | unset | Set `1` to retry MobileSAM on CPU after MPS/CUDA failure |
 | `SAM_WARMUP_FRAMES` | `3` | Frames on locked track after identity lock before SAM |
 | `REID_FALLBACK_THRESH` | `0.65` | ReID match when ByteTrack loses lock `track_id` |
 | `SCENE_CUT_THRESH` | `0.65` | Grayscale-histogram correlation below this marks a hard broadcast cut |
@@ -124,10 +129,15 @@ Health check: `GET http://localhost:8000/health`
 
 ### `POST /api/analyze`
 
+Uses the same `run_pipeline()` as `python -m backend.cli` (see [CLI](#cli-smoke-test-without-http)).
+
+**Pitch calibration:** same lookup as the CLI — `PITCH_CALIBRATION_NAME` (default `testmatch2`). The upload filename is **not** used to pick `{stem}.json` automatically. After saving pitch corners in the UI, the frontend sends optional form field `calibration_name` (e.g. `lozano` for `lozano.mp4`) so that saved JSON is tried first, then `testmatch2`.
+
 Multipart form:
 
 - `video` — MP4 or MOV file
 - `details` — JSON string matching frontend `PlayerDetails`:
+- `calibration_name` — optional; safe name of saved pitch calibration (legacy flow after calibrate)
 
 ```json
 {
@@ -202,9 +212,14 @@ source backend/.venv/bin/activate
 python -m backend.tools.render_mask_overlay_video \\
   /path/to/match.mp4 backend/sample-details.json -o /tmp/mask_overlay.mp4
 
-# Optional: cap length (still reads input until cap)
+# Pipeline cap vs output clip (do not use --max-frames for pipeline length)
 python -m backend.tools.render_mask_overlay_video \\
-  /path/to/match.mp4 backend/sample-details.json -o /tmp/short.mp4 --max-frames 300
+  /path/to/match.mp4 backend/data/lozano-details.json -o /tmp/lozano_masks.mp4 \\
+  --pipeline-max-frames 1100 --frame-start 970 --max-frames 130
+
+# Quick SAM-only visual check (no player lock; largest person on anchor frame)
+python backend/scripts/render_sam_demo_clip.py \\
+  /path/to/match.mp4 -o /tmp/sam_demo.mp4 --anchor-frame 400 --num-frames 90
 
 # Optional: rows from a saved `python -m backend.cli ...` JSON (only works if that JSON still contains mask_rle)
 python -m backend.tools.render_mask_overlay_video \\

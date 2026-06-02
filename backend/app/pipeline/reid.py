@@ -9,6 +9,8 @@ from pathlib import Path
 
 import numpy as np
 
+from backend.app.pipeline.inference_device import resolve_torch_device_str
+
 logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -71,13 +73,15 @@ def get_reid_extractor():
                 "using ImageNet-pretrained osnet_x1_0 (set REID_WEIGHTS for SoccerNet weights)",
                 _DEFAULT_CHECKPOINT,
             )
+        reid_device = resolve_torch_device_str(env_key="INFERENCE_DEVICE")
         _extractor = ReIDFeatureExtractor(
-            weights_path=str(weights) if weights is not None else None
+            weights_path=str(weights) if weights is not None else None,
+            device=reid_device,
         )
         if weights is not None:
-            logger.info("ReID loaded from %s", weights)
+            logger.info("ReID loaded from %s on %s", weights, reid_device)
         else:
-            logger.info("ReID loaded (pretrained osnet_x1_0)")
+            logger.info("ReID loaded (pretrained osnet_x1_0) on %s", reid_device)
         return _extractor
     except Exception as exc:
         logger.warning("ReID unavailable (%s). Install torchreid + torch.", exc)

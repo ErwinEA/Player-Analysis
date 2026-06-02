@@ -48,7 +48,9 @@ def test_save_pitch_calibration(client):
         },
     )
     assert save.status_code == 200
-    assert "template_url" in save.json()
+    body = save.json()
+    assert "template_url" in body
+    assert body.get("confidence") is not None
 
 
 def test_save_pitch_calibration_boundary_points(client):

@@ -63,10 +63,14 @@ async function parseErrorDetail(res: Response): Promise<string> {
 export async function analyzeVideo(
   video: File,
   details: PlayerDetails,
+  options?: { calibrationName?: string | null },
 ): Promise<AnalyzeResponse> {
   const form = new FormData();
   form.append("video", video);
   form.append("details", JSON.stringify(details));
+  if (options?.calibrationName?.trim()) {
+    form.append("calibration_name", options.calibrationName.trim());
+  }
 
   const res = await fetch(`${getApiBaseUrl()}/api/analyze`, {
     method: "POST",
@@ -93,19 +97,53 @@ export async function fetchPitchFrame(
   return res.json() as Promise<PitchFrameResponse>;
 }
 
+export type PitchCalibrationPreviewResponse = {
+  confidence: number;
+  coverage_pct: number;
+  probe_count: number;
+  probe_total: number;
+  warnings: string[];
+  fitted_quad: number[][];
+  mode: string;
+  probe_details?: Record<string, unknown>[];
+};
+
+export type PitchCalibrationSaveResult = {
+  name: string;
+  template_url: string;
+  calibration_url?: string;
+  confidence?: number;
+  coverage_pct?: number;
+  warnings?: string[];
+};
+
+export async function previewPitchCalibration(payload: {
+  name: string;
+  frame_index: number;
+  image_boundary_points: number[][];
+}): Promise<PitchCalibrationPreviewResponse> {
+  const res = await fetch(`${getApiBaseUrl()}/api/pitch/calibration/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await parseErrorDetail(res));
+  return res.json() as Promise<PitchCalibrationPreviewResponse>;
+}
+
 export async function savePitchCalibration(payload: {
   name: string;
   frame_index: number;
   image_boundary_points: number[][];
   image_corners?: number[][];
-}): Promise<{ name: string; template_url: string }> {
+}): Promise<PitchCalibrationSaveResult> {
   const res = await fetch(`${getApiBaseUrl()}/api/pitch/calibration`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(await parseErrorDetail(res));
-  return res.json() as Promise<{ name: string; template_url: string }>;
+  return res.json() as Promise<PitchCalibrationSaveResult>;
 }
 
 export async function saveLegacyPitchCalibration(
@@ -115,7 +153,7 @@ export async function saveLegacyPitchCalibration(
     frame_index: number;
     image_boundary_points: number[][];
   },
-): Promise<{ name: string; template_url: string }> {
+): Promise<PitchCalibrationSaveResult> {
   const form = new FormData();
   form.append("name", payload.name);
   form.append("frame_index", String(payload.frame_index));
@@ -137,7 +175,7 @@ export async function saveLegacyPitchCalibration(
     );
   }
   if (!res.ok) throw new Error(await parseErrorDetail(res));
-  return res.json() as Promise<{ name: string; template_url: string }>;
+  return res.json() as Promise<PitchCalibrationSaveResult>;
 }
 
 export async function hasPitchCalibration(name: string): Promise<boolean> {

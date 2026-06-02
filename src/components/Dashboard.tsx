@@ -214,7 +214,12 @@ export function Dashboard() {
     setGameplayAnalysis(null);
 
     try {
-      const response = await analyzeVideo(video, details);
+      const response = await analyzeVideo(video, details, {
+        calibrationName:
+          legacyCalibrationReady && legacyCalibrationKey
+            ? legacyCalibrationKey
+            : null,
+      });
       if (runId !== analyzeRunRef.current) return;
       setResult(response);
       const { metrics: nextMetrics, warning } = metricsForResult(response);
@@ -222,8 +227,13 @@ export function Dashboard() {
       setMetricsWarning(warning);
       if (response.event_counts && response.provenance === "inferred") {
         const ec = response.event_counts;
+        const weakCount =
+          response.inferred_events?.filter((e) => e.lock_confidence === "weak")
+            .length ?? 0;
+        const weakNote =
+          weakCount > 0 ? ` (${weakCount} pre-lock/uncertain).` : "";
         setGameplayAnalysis({
-          summary: `Inferred: ${ec.Pass} passes, ${ec.Shot} shots, ${ec.Goal} goals, ${ec.Drive} drives.`,
+          summary: `Inferred: ${ec.Pass} passes, ${ec.Shot} shots, ${ec.Goal} goals, ${ec.Drive} drives.${weakNote}`,
         });
       } else {
         setGameplayAnalysis(null);
@@ -234,7 +244,13 @@ export function Dashboard() {
       setErrorMessage(err instanceof Error ? err.message : "Analysis failed");
       setAnalyzeState("error");
     }
-  }, [canAnalyze, video, details]);
+  }, [
+    canAnalyze,
+    video,
+    details,
+    legacyCalibrationReady,
+    legacyCalibrationKey,
+  ]);
 
   const statusLabel =
     apiStatus === "checking"

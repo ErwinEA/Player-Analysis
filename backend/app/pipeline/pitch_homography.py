@@ -18,6 +18,10 @@ PITCH_WIDTH_M = 68.0
 CORNER_LABELS = ("top_left", "top_right", "bottom_right", "bottom_left")
 
 BOUNDARY_POINT_COUNT = 10
+MIN_BOUNDARY_POINTS = 4
+MAX_BOUNDARY_POINTS = 20
+PROBE_COUNT_REQUIRED = 3
+PROBE_TOTAL = 5
 # Indices of the four pitch corners within the 10-point clockwise outline
 BOUNDARY_CORNER_INDICES = (0, 3, 6, 9)
 # Clockwise from top-left around the visible pitch outline
@@ -36,6 +40,28 @@ BOUNDARY_LABELS = (
 
 DEFAULT_PIXELS_PER_METER = 10
 
+_CALIBRATION_PROBE_FRACTIONS = (
+    (0.5, 0.5),
+    (0.25, 0.55),
+    (0.75, 0.55),
+    (0.5, 0.72),
+    (0.5, 0.35),
+)
+
+
+@dataclass(frozen=True)
+class CalibrationDiagnostics:
+    """Pre-save homography quality metrics (outline mode)."""
+
+    probe_count: int
+    probe_total: int
+    probe_details: tuple[dict[str, Any], ...]
+    coverage_pct: float
+    confidence: float
+    warnings: tuple[str, ...]
+    fitted_quad: tuple[list[float], ...]
+    mode: str = "outline"
+
 
 @dataclass(frozen=True)
 class PitchCalibration:
@@ -50,7 +76,10 @@ class PitchCalibration:
     pitch_width_m: float
     homography: list[list[float]]  # 3x3 image -> meters
     homography_inv: list[list[float]]  # 3x3 meters -> image
-    image_boundary_points: list[list[float]] | None = None  # 10-point outline (optional)
+    image_boundary_points: list[list[float]] | None = None  # outline (optional)
+    mode: str = "outline"
+    confidence: float | None = None
+    coverage_pct: float | None = None
 
     @property
     def H(self) -> np.ndarray:
@@ -90,6 +119,9 @@ class PitchCalibration:
             "pitch_width_m": self.pitch_width_m,
             "homography": self.homography,
             "homography_inv": self.homography_inv,
+            "mode": self.mode,
+            "confidence": self.confidence,
+            "coverage_pct": self.coverage_pct,
         }
 
     @classmethod
@@ -99,16 +131,21 @@ class PitchCalibration:
         width_m = float(data.get("pitch_width_m", PITCH_WIDTH_M))
         boundary_raw = data.get("image_boundary_points")
         corners_raw = data.get("image_corners")
-        if boundary_raw and len(boundary_raw) == BOUNDARY_POINT_COUNT:
+        w, h = image_size
+        if boundary_raw and len(boundary_raw) >= MIN_BOUNDARY_POINTS:
             boundary = [list(map(float, p)) for p in boundary_raw]
-            w, h = image_size
+            if len(boundary) > MAX_BOUNDARY_POINTS:
+                raise ValueError(
+                    f"At most {MAX_BOUNDARY_POINTS} boundary points allowed, got {len(boundary)}."
+                )
             corners = decagon_to_quad(boundary, width=w, height=h)
         elif corners_raw and len(corners_raw) == 4:
             corners = [list(map(float, p)) for p in corners_raw]
             boundary = None
         else:
-            raise ValueError("Calibration JSON needs image_boundary_points or 4 image_corners.")
-        w, h = image_size
+            raise ValueError(
+                "Calibration JSON needs image_boundary_points (4–20) or 4 image_corners."
+            )
         H, H_inv = compute_homography(
             corners,
             width=w,
@@ -127,6 +164,15 @@ class PitchCalibration:
             pitch_width_m=width_m,
             homography=H.tolist(),
             homography_inv=H_inv.tolist(),
+            mode=str(data.get("mode", "outline")),
+            confidence=(
+                float(data["confidence"]) if data.get("confidence") is not None else None
+            ),
+            coverage_pct=(
+                float(data["coverage_pct"])
+                if data.get("coverage_pct") is not None
+                else None
+            ),
         )
 
 
@@ -140,35 +186,105 @@ def is_on_pitch(
     return 0.0 <= x_m <= length_m and 0.0 <= y_m <= width_m
 
 
-def validate_calibration_maps_to_pitch(cal: PitchCalibration) -> None:
-    """Reject calibrations whose homography does not map the frame onto the pitch."""
+def _calibration_probe_pixels(cal: PitchCalibration) -> tuple[tuple[float, float], ...]:
     w, h = cal.image_size
-    probes = (
-        (w * 0.5, h * 0.5),
-        (w * 0.25, h * 0.55),
-        (w * 0.75, h * 0.55),
-        (w * 0.5, h * 0.72),
-        (w * 0.5, h * 0.35),
-    )
+    return tuple((w * fx, h * fy) for fx, fy in _CALIBRATION_PROBE_FRACTIONS)
+
+
+def probe_calibration(cal: PitchCalibration) -> tuple[int, list[dict[str, Any]]]:
+    """Sample frame probes; return count on-pitch and per-probe details."""
+    details: list[dict[str, Any]] = []
     in_bounds = 0
-    for px, py in probes:
+    for px, py in _calibration_probe_pixels(cal):
+        entry: dict[str, Any] = {
+            "px": round(px, 1),
+            "py": round(py, 1),
+            "on_pitch": False,
+        }
         try:
             x_m, y_m = cal.pixel_to_meters(px, py)
+            entry["x_m"] = round(x_m, 2)
+            entry["y_m"] = round(y_m, 2)
+            on = is_on_pitch(
+                x_m,
+                y_m,
+                length_m=cal.pitch_length_m,
+                width_m=cal.pitch_width_m,
+            )
+            entry["on_pitch"] = on
+            if on:
+                in_bounds += 1
         except ValueError:
-            continue
-        if is_on_pitch(
-            x_m,
-            y_m,
-            length_m=cal.pitch_length_m,
-            width_m=cal.pitch_width_m,
-        ):
-            in_bounds += 1
-    if in_bounds < 3:
+            entry["error"] = "maps_to_infinity"
+        details.append(entry)
+    return in_bounds, details
+
+
+def validate_calibration_maps_to_pitch(cal: PitchCalibration) -> None:
+    """Reject calibrations whose homography does not map the frame onto the pitch."""
+    in_bounds, _ = probe_calibration(cal)
+    if in_bounds < PROBE_COUNT_REQUIRED:
         raise ValueError(
             "Calibration does not map the video frame onto the pitch. "
-            "Re-mark the ten boundary points on a clear wide shot, in clockwise order "
-            "from the top-left corner."
+            "Re-mark boundary points on a clear wide shot around the visible pitch outline."
         )
+
+
+def compute_grid_coverage(
+    cal: PitchCalibration,
+    *,
+    grid_x: int = 5,
+    grid_y: int = 4,
+) -> float:
+    """Fraction of pitch grid points that project into the image frame."""
+    w, h = cal.image_size
+    length_m = cal.pitch_length_m
+    width_m = cal.pitch_width_m
+    xs = np.linspace(0.0, length_m, grid_x) if grid_x > 1 else np.array([0.0])
+    ys = np.linspace(0.0, width_m, grid_y) if grid_y > 1 else np.array([0.0])
+    valid = 0
+    total = 0
+    for x_m in xs:
+        for y_m in ys:
+            total += 1
+            try:
+                px, py = cal.meters_to_pixel(float(x_m), float(y_m))
+            except ValueError:
+                continue
+            if 0.0 <= px < w and 0.0 <= py < h:
+                valid += 1
+    return valid / total if total else 0.0
+
+
+def compute_calibration_confidence(
+    *,
+    probe_count: int,
+    coverage_pct: float,
+    probe_total: int = PROBE_TOTAL,
+) -> tuple[float, list[str]]:
+    """Score calibration quality 0–1 with human-readable warnings."""
+    warnings: list[str] = []
+    confidence = 0.5
+    if probe_count >= PROBE_COUNT_REQUIRED:
+        confidence += 0.3
+    else:
+        warnings.append(
+            f"Only {probe_count}/{probe_total} frame probes map onto the pitch; "
+            "try a wider shot or adjust boundary points."
+        )
+        confidence = min(confidence, 0.5)
+    if coverage_pct >= 0.7:
+        confidence += 0.2
+    elif coverage_pct < 0.6:
+        warnings.append(
+            f"Pitch grid coverage is {coverage_pct * 100:.0f}% (<60%); "
+            "some pitch regions may not map correctly in this frame."
+        )
+    if probe_count < PROBE_COUNT_REQUIRED:
+        confidence = min(confidence, 0.2)
+    else:
+        confidence = max(0.2, min(1.0, confidence))
+    return round(confidence, 3), warnings
 
 
 def world_corners_meters(
@@ -249,8 +365,14 @@ def decagon_to_quad(
 ) -> list[list[float]]:
     """Fit a perspective quad from 4 or 10 clockwise boundary points on the pitch outline."""
     pts = np.asarray(boundary_points, dtype=np.float64).reshape(-1, 2)
-    if pts.shape[0] < 4:
-        raise ValueError(f"Need at least 4 boundary points, got {pts.shape[0]}.")
+    if pts.shape[0] < MIN_BOUNDARY_POINTS:
+        raise ValueError(
+            f"Need at least {MIN_BOUNDARY_POINTS} boundary points, got {pts.shape[0]}."
+        )
+    if pts.shape[0] > MAX_BOUNDARY_POINTS:
+        raise ValueError(
+            f"At most {MAX_BOUNDARY_POINTS} boundary points allowed, got {pts.shape[0]}."
+        )
     if width is not None and height is not None:
         _validate_boundary_points(pts, width, height)
 
@@ -330,16 +452,25 @@ def build_calibration(
     image_size: tuple[int, int],
     length_m: float = PITCH_LENGTH_M,
     width_m: float = PITCH_WIDTH_M,
+    mode: str = "outline",
+    confidence: float | None = None,
+    coverage_pct: float | None = None,
 ) -> PitchCalibration:
     w, h = image_size
     if image_boundary_points is not None:
+        n_pts = len(image_boundary_points)
+        if n_pts < MIN_BOUNDARY_POINTS or n_pts > MAX_BOUNDARY_POINTS:
+            raise ValueError(
+                f"Boundary point count must be {MIN_BOUNDARY_POINTS}–{MAX_BOUNDARY_POINTS}, "
+                f"got {n_pts}."
+            )
         boundary = [[float(x), float(y)] for x, y in image_boundary_points]
         corners = decagon_to_quad(boundary, width=w, height=h)
     elif image_corners is not None:
         corners = decagon_to_quad(image_corners, width=w, height=h)
         boundary = (
             [[float(x), float(y)] for x, y in image_corners]
-            if len(image_corners) == BOUNDARY_POINT_COUNT
+            if len(image_corners) >= MIN_BOUNDARY_POINTS
             else None
         )
     else:
@@ -358,7 +489,71 @@ def build_calibration(
         pitch_width_m=width_m,
         homography=H.tolist(),
         homography_inv=H_inv.tolist(),
+        mode=mode,
+        confidence=confidence,
+        coverage_pct=coverage_pct,
     )
+
+
+def run_calibration_diagnostics(cal: PitchCalibration) -> CalibrationDiagnostics:
+    """Compute probe, coverage, and confidence metrics without raising on probe failure."""
+    probe_count, probe_details = probe_calibration(cal)
+    coverage = compute_grid_coverage(cal)
+    confidence, warnings = compute_calibration_confidence(
+        probe_count=probe_count,
+        coverage_pct=coverage,
+    )
+    return CalibrationDiagnostics(
+        probe_count=probe_count,
+        probe_total=PROBE_TOTAL,
+        probe_details=tuple(probe_details),
+        coverage_pct=round(coverage, 4),
+        confidence=confidence,
+        warnings=tuple(warnings),
+        fitted_quad=tuple(list(c) for c in cal.image_corners),
+        mode=cal.mode,
+    )
+
+
+def build_calibration_with_diagnostics(
+    name: str,
+    image_corners: list[list[float]] | None = None,
+    *,
+    image_boundary_points: list[list[float]] | None = None,
+    video_path: str | None = None,
+    frame_index: int = 0,
+    image_size: tuple[int, int],
+    length_m: float = PITCH_LENGTH_M,
+    width_m: float = PITCH_WIDTH_M,
+) -> tuple[PitchCalibration, CalibrationDiagnostics]:
+    """Build calibration and attach diagnostic metadata (does not raise on probe failure)."""
+    cal = build_calibration(
+        name,
+        image_corners,
+        image_boundary_points=image_boundary_points,
+        video_path=video_path,
+        frame_index=frame_index,
+        image_size=image_size,
+        length_m=length_m,
+        width_m=width_m,
+    )
+    diag = run_calibration_diagnostics(cal)
+    cal = PitchCalibration(
+        name=cal.name,
+        video_path=cal.video_path,
+        frame_index=cal.frame_index,
+        image_size=cal.image_size,
+        image_corners=cal.image_corners,
+        pitch_length_m=cal.pitch_length_m,
+        pitch_width_m=cal.pitch_width_m,
+        homography=cal.homography,
+        homography_inv=cal.homography_inv,
+        image_boundary_points=cal.image_boundary_points,
+        mode=diag.mode,
+        confidence=diag.confidence,
+        coverage_pct=diag.coverage_pct,
+    )
+    return cal, diag
 
 
 def save_calibration(cal: PitchCalibration, path: Path) -> None:

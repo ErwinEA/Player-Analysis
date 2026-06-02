@@ -32,6 +32,7 @@ def main() -> int:
     details_data = json.loads(args.details.read_text(encoding="utf-8"))
     details = PlayerDetails.model_validate(details_data)
 
+    # Same entry as POST /api/analyze (no calibration_key → PITCH_CALIBRATION_NAME).
     result = run_pipeline(str(args.video), details)
     indent = 2 if args.pretty else None
     print(result.model_dump_json(indent=indent))

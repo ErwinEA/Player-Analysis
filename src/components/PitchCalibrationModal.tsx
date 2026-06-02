@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchPitchFrame,
+  previewPitchCalibration,
   saveLegacyPitchCalibration,
   savePitchCalibration,
+  type PitchCalibrationPreviewResponse,
   type PitchFrameResponse,
 } from "@/lib/api";
 import {
@@ -15,10 +17,11 @@ import {
   suggestedCalibrationSeekSeconds,
 } from "@/lib/videoFrame";
 import {
-  BOUNDARY_LABELS,
-  BOUNDARY_POINT_COUNT,
+  boundaryPointLabel,
   decagonToQuad,
   legacyCornersToBoundary,
+  MAX_BOUNDARY_POINTS,
+  MIN_BOUNDARY_POINTS,
 } from "@/lib/pitchCalibration";
 import styles from "./PitchCalibrationModal.module.css";
 
@@ -66,6 +69,10 @@ export function PitchCalibrationModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reticleAnnouncement, setReticleAnnouncement] = useState("");
+  const [step, setStep] = useState<"place" | "preview">("place");
+  const [previewData, setPreviewData] =
+    useState<PitchCalibrationPreviewResponse | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [seekSeconds, setSeekSeconds] = useState(4);
   const [videoDuration, setVideoDuration] = useState(0);
   const activeFrameIndex = legacyMode
@@ -73,15 +80,16 @@ export function PitchCalibrationModal({
     : frameIndex;
 
   const placeCornerAt = useCallback((x: number, y: number) => {
+    if (step !== "place") return;
     setPoints((prev) => {
-      if (prev.length >= BOUNDARY_POINT_COUNT) return prev;
+      if (prev.length >= MAX_BOUNDARY_POINTS) return prev;
       return [...prev, { x, y }];
     });
-  }, []);
+  }, [step]);
 
   const derivedQuad = useMemo(
     () =>
-      points.length === BOUNDARY_POINT_COUNT ? decagonToQuad(points) : [],
+      points.length >= MIN_BOUNDARY_POINTS ? decagonToQuad(points) : [],
     [points],
   );
 
@@ -100,7 +108,7 @@ export function PitchCalibrationModal({
       ctx.fill();
       ctx.fillStyle = "#fff";
       ctx.font = "13px sans-serif";
-      const label = BOUNDARY_LABELS[i] ?? `Point ${i + 1}`;
+      const label = boundaryPointLabel(i);
       ctx.fillText(`${i + 1}: ${label}`, p.x + 10, p.y - 8);
     });
     if (points.length >= 2) {
@@ -134,7 +142,7 @@ export function PitchCalibrationModal({
         ctx.fill();
       });
     }
-    if (points.length < BOUNDARY_POINT_COUNT) {
+    if (step === "place" && points.length < MAX_BOUNDARY_POINTS) {
       ctx.strokeStyle = "#ffff00";
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -147,14 +155,18 @@ export function PitchCalibrationModal({
       ctx.lineTo(reticle.x, reticle.y + 14);
       ctx.stroke();
     }
-  }, [points, reticle, derivedQuad]);
+  }, [points, reticle, derivedQuad, step]);
 
   const applyFrameData = useCallback((data: PitchFrameResponse) => {
     setFrameData(data);
     setReticle({ x: data.width / 2, y: data.height / 2 });
-    if (data.image_boundary_points?.length === BOUNDARY_POINT_COUNT) {
+    const boundaryLen = data.image_boundary_points?.length ?? 0;
+    if (
+      boundaryLen >= MIN_BOUNDARY_POINTS &&
+      boundaryLen <= MAX_BOUNDARY_POINTS
+    ) {
       setPoints(
-        data.image_boundary_points.map(([x, y]) => ({
+        data.image_boundary_points!.map(([x, y]) => ({
           x: Number(x),
           y: Number(y),
         })),
@@ -189,6 +201,8 @@ export function PitchCalibrationModal({
     setLoading(true);
     setError(null);
     setPoints([]);
+    setStep("place");
+    setPreviewData(null);
 
     const run = async () => {
       try {
@@ -262,32 +276,38 @@ export function PitchCalibrationModal({
   }, [points, reticle, redraw]);
 
   useEffect(() => {
-    if (!open || !frameData || points.length >= BOUNDARY_POINT_COUNT) {
+    if (!open || !frameData || step !== "place" || points.length >= MAX_BOUNDARY_POINTS) {
       setReticleAnnouncement("");
       return;
     }
     setReticleAnnouncement(
       `Crosshair at ${Math.round(reticle.x)}, ${Math.round(reticle.y)}`,
     );
-  }, [open, frameData, points.length, reticle]);
+  }, [open, frameData, points.length, reticle, step]);
 
   const canvasAriaLabel = useMemo(() => {
     const placed = points
       .map(
         (p, i) =>
-          `${BOUNDARY_LABELS[i] ?? `Point ${i + 1}`} at ${Math.round(p.x)}, ${Math.round(p.y)}`,
+          `${boundaryPointLabel(i)} at ${Math.round(p.x)}, ${Math.round(p.y)}`,
       )
       .join("; ");
-    if (points.length >= BOUNDARY_POINT_COUNT) {
-      return `Pitch frame. All ${BOUNDARY_POINT_COUNT} boundary points placed.${placed ? ` ${placed}.` : ""}`;
+    if (step === "preview") {
+      const conf = previewData
+        ? `Confidence ${Math.round(previewData.confidence * 100)} percent.`
+        : "";
+      return `Pitch calibration preview. ${conf}${placed ? ` Points: ${placed}.` : ""}`;
+    }
+    if (points.length >= MAX_BOUNDARY_POINTS) {
+      return `Pitch frame. Maximum ${MAX_BOUNDARY_POINTS} points placed.${placed ? ` ${placed}.` : ""}`;
     }
     const crosshair = `Crosshair at ${Math.round(reticle.x)}, ${Math.round(reticle.y)}`;
-    const next = BOUNDARY_LABELS[points.length] ?? "next point";
+    const next = boundaryPointLabel(points.length);
     return (
       `Pitch boundary placement. Arrow keys move crosshair; Enter or Space places a point; Backspace removes the last. ` +
-      `${crosshair}. ${points.length} of ${BOUNDARY_POINT_COUNT} placed; next: ${next}.${placed ? ` Placed: ${placed}.` : ""}`
+      `${crosshair}. ${points.length} points placed (minimum ${MIN_BOUNDARY_POINTS}, maximum ${MAX_BOUNDARY_POINTS}); next: ${next}.${placed ? ` Placed: ${placed}.` : ""}`
     );
-  }, [points, reticle]);
+  }, [points, reticle, step, previewData]);
 
   useEffect(() => {
     if (!open) return;
@@ -376,29 +396,29 @@ export function PitchCalibrationModal({
 
   const handleCanvasKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
     if (!frameData) return;
-    const step = e.shiftKey ? RETICLE_STEP_FAST : RETICLE_STEP;
+    const moveStep = e.shiftKey ? RETICLE_STEP_FAST : RETICLE_STEP;
 
     switch (e.key) {
       case "ArrowLeft":
         e.preventDefault();
-        setReticle((r) => clampReticle(r.x - step, r.y));
+        setReticle((r) => clampReticle(r.x - moveStep, r.y));
         break;
       case "ArrowRight":
         e.preventDefault();
-        setReticle((r) => clampReticle(r.x + step, r.y));
+        setReticle((r) => clampReticle(r.x + moveStep, r.y));
         break;
       case "ArrowUp":
         e.preventDefault();
-        setReticle((r) => clampReticle(r.x, r.y - step));
+        setReticle((r) => clampReticle(r.x, r.y - moveStep));
         break;
       case "ArrowDown":
         e.preventDefault();
-        setReticle((r) => clampReticle(r.x, r.y + step));
+        setReticle((r) => clampReticle(r.x, r.y + moveStep));
         break;
       case "Enter":
       case " ":
         e.preventDefault();
-        if (points.length < BOUNDARY_POINT_COUNT) {
+        if (step === "place" && points.length < MAX_BOUNDARY_POINTS) {
           placeCornerAt(reticle.x, reticle.y);
         }
         break;
@@ -413,14 +433,44 @@ export function PitchCalibrationModal({
 
   const handleReset = () => {
     setPoints([]);
+    setStep("place");
+    setPreviewData(null);
     if (frameData) {
       setReticle({ x: frameData.width / 2, y: frameData.height / 2 });
     }
   };
 
+  const boundaryPayload = useMemo(
+    () => points.map((p) => [p.x, p.y]),
+    [points],
+  );
+
+  const handlePreview = async () => {
+    if (points.length < MIN_BOUNDARY_POINTS || legacyMode) return;
+    setPreviewing(true);
+    setError(null);
+    try {
+      const result = await previewPitchCalibration({
+        name: calibrationName,
+        frame_index: activeFrameIndex,
+        image_boundary_points: boundaryPayload,
+      });
+      setPreviewData(result);
+      setStep("preview");
+      const confPct = Math.round(result.confidence * 100);
+      setReticleAnnouncement(
+        `Preview ready. Confidence ${confPct} percent. Probes ${result.probe_count} of ${result.probe_total} on pitch.`,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Preview failed");
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
   const handleSave = async () => {
-    if (points.length !== BOUNDARY_POINT_COUNT) return;
-    const boundary = points.map((p) => [p.x, p.y]);
+    if (points.length < MIN_BOUNDARY_POINTS) return;
+    if (!legacyMode && step !== "preview") return;
     setSaving(true);
     setError(null);
     try {
@@ -428,13 +478,13 @@ export function PitchCalibrationModal({
         await saveLegacyPitchCalibration(videoFile, {
           name: calibrationName,
           frame_index: activeFrameIndex,
-          image_boundary_points: boundary,
+          image_boundary_points: boundaryPayload,
         });
       } else {
         await savePitchCalibration({
           name: calibrationName,
           frame_index: activeFrameIndex,
-          image_boundary_points: boundary,
+          image_boundary_points: boundaryPayload,
         });
       }
       onSaved(calibrationName);
@@ -455,9 +505,15 @@ export function PitchCalibrationModal({
   if (!open) return null;
 
   const nextBoundaryLabel =
-    points.length < BOUNDARY_POINT_COUNT
-      ? BOUNDARY_LABELS[points.length]
+    step === "place" && points.length < MAX_BOUNDARY_POINTS
+      ? boundaryPointLabel(points.length)
       : null;
+
+  const canPreview =
+    !legacyMode &&
+    step === "place" &&
+    points.length >= MIN_BOUNDARY_POINTS &&
+    !previewing;
 
   return (
     <div className={styles.backdrop} role="presentation" onClick={onClose}>
@@ -482,10 +538,11 @@ export function PitchCalibrationModal({
           </button>
         </header>
         <p id="pitch-calibration-hint" className={styles.hint}>
-          Place {BOUNDARY_POINT_COUNT} points clockwise around the visible pitch
-          outline (yellow). A green quadrilateral is derived from your outline
-          for the warp. Use arrow keys to move the crosshair, then Enter or
-          Space to place each point. Backspace removes the last point.
+          Place {MIN_BOUNDARY_POINTS}–{MAX_BOUNDARY_POINTS} points clockwise
+          around the visible pitch outline (yellow). A green quadrilateral is
+          derived once you have at least {MIN_BOUNDARY_POINTS} points. Use arrow
+          keys to move the crosshair, then Enter or Space to place each point.
+          Backspace removes the last point.
           {legacyMode
             ? " Choose a wide, unobstructed view of the pitch before marking points."
             : ` Frame ${activeFrameIndex} from the server default video.`}
@@ -516,10 +573,39 @@ export function PitchCalibrationModal({
           className={styles.progress}
           aria-live="polite"
         >
-          {points.length} of {BOUNDARY_POINT_COUNT} boundary points placed
+          {points.length} point{points.length === 1 ? "" : "s"} placed (min{" "}
+          {MIN_BOUNDARY_POINTS}, max {MAX_BOUNDARY_POINTS})
           {nextBoundaryLabel ? ` — next: ${nextBoundaryLabel}` : ""}
           {derivedQuad.length === 4 ? " — warp quad ready" : ""}
         </p>
+        {step === "preview" && previewData && (
+          <div
+            className={styles.previewPanel}
+            role="region"
+            aria-label="Calibration preview"
+          >
+            <p className={styles.previewMetric}>
+              Confidence:{" "}
+              <strong>{Math.round(previewData.confidence * 100)}%</strong>
+            </p>
+            <p className={styles.previewMetric}>
+              Frame probes on pitch:{" "}
+              <strong>
+                {previewData.probe_count}/{previewData.probe_total}
+              </strong>
+            </p>
+            <p className={styles.previewMetric}>
+              Grid coverage: <strong>{previewData.coverage_pct}%</strong>
+            </p>
+            {previewData.warnings.length > 0 && (
+              <ul className={styles.warningList}>
+                {previewData.warnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         <p id="pitch-calibration-reticle" className="srOnly" aria-live="polite">
           {reticleAnnouncement}
         </p>
@@ -531,7 +617,7 @@ export function PitchCalibrationModal({
           >
             {points.map((p, i) => (
               <li key={`${i}-${p.x}-${p.y}`}>
-                {BOUNDARY_LABELS[i]}: {Math.round(p.x)}, {Math.round(p.y)}
+                {boundaryPointLabel(i)}: {Math.round(p.x)}, {Math.round(p.y)}
               </li>
             ))}
           </ol>
@@ -561,17 +647,57 @@ export function PitchCalibrationModal({
           </div>
         )}
         <footer className={styles.footer}>
-          <button type="button" onClick={handleReset} disabled={saving}>
-            Reset points
-          </button>
           <button
             type="button"
-            className={styles.primary}
-            onClick={handleSave}
-            disabled={points.length !== BOUNDARY_POINT_COUNT || saving}
+            onClick={handleReset}
+            disabled={saving || previewing}
           >
-            {saving ? "Saving…" : "Save calibration"}
+            Reset points
           </button>
+          {step === "place" && !legacyMode && (
+            <button
+              type="button"
+              className={styles.primary}
+              onClick={() => void handlePreview()}
+              disabled={!canPreview}
+            >
+              {previewing ? "Validating…" : "Validate & preview"}
+            </button>
+          )}
+          {step === "place" && legacyMode && (
+            <button
+              type="button"
+              className={styles.primary}
+              onClick={() => void handleSave()}
+              disabled={
+                points.length < MIN_BOUNDARY_POINTS || saving || previewing
+              }
+            >
+              {saving ? "Saving…" : "Save calibration"}
+            </button>
+          )}
+          {step === "preview" && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setStep("place");
+                  setPreviewData(null);
+                }}
+                disabled={saving}
+              >
+                Adjust points
+              </button>
+              <button
+                type="button"
+                className={styles.primary}
+                onClick={() => void handleSave()}
+                disabled={saving}
+              >
+                {saving ? "Saving…" : "Save calibration"}
+              </button>
+            </>
+          )}
         </footer>
       </div>
     </div>

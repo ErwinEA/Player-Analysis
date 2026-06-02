@@ -141,3 +141,28 @@
   background: #2563eb !important;
   border-color: #2563eb !important;
 }
+
+.previewPanel {
+  margin: 0 0 1rem;
+  padding: 0.75rem 1rem;
+  background: #111827;
+  border-radius: 8px;
+  border: 1px solid #374151;
+}
+
+.previewMetric {
+  margin: 0.25rem 0;
+  font-size: 0.875rem;
+  color: #e5e7eb;
+}
+
+.warningList {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  color: #fcd34d;
+  font-size: 0.8rem;
+}
+
+.warningList li {
+  margin-bottom: 0.25rem;
+}

@@ -11,10 +11,12 @@ from dataclasses import asdict, dataclass
 
 from backend.app.pipeline.ball_events.ball_detector import BallState
 from backend.app.pipeline.ball_events.events import (
+    DetectedEvent,
     aggregate_counts,
     detect_events,
     infer_attack_direction_label,
 )
+from backend.app.pipeline.ball_events.identification import has_target_identification
 from backend.app.pipeline.ball_events.possession import PossessionTracker
 from backend.app.pipeline.ball_events.timeline import (
     TargetFrameSample,
@@ -74,18 +76,20 @@ def run_events(
     *,
     fps: float,
     locked_at_frame: int | None,
-) -> tuple[PlayerEventCounts, int]:
+) -> tuple[PlayerEventCounts, int, list[DetectedEvent]]:
     """
-    Returns (event_counts, ball_samples) where ball_samples = frames with a raw detection.
+    Returns (event_counts, ball_samples, detected_events) where ball_samples = frames
+    with a raw detection.
     """
     empty = PlayerEventCounts()
     ball_samples = _count_detections(ball_states)
-    if locked_at_frame is None:
-        return empty, ball_samples
+    has_soft_id = any(s.identification_type for s in target_samples)
+    if locked_at_frame is None and not has_soft_id:
+        return empty, ball_samples, []
 
     timeline = build_timeline(ball_states, target_samples)
     if not timeline:
-        return empty, 0
+        return empty, 0, []
 
     pass_min = _env_float("PASS_MIN_SPEED_M_S", 4.0)
     shot_min = _env_float("SHOT_MIN_SPEED_M_S", 8.0)
@@ -122,7 +126,7 @@ def run_events(
         possession.append(pf)
         if debug_frames is None:
             continue
-        if entry.frame < locked_at_frame:
+        if not has_target_identification(entry.target, locked_at_frame)[0]:
             continue
         target_m = entry.target.target_m
         ball_m = entry.ball.smooth_m
@@ -161,6 +165,14 @@ def run_events(
         emitted_by_frame=emitted_by_frame,
     )
     counts = aggregate_counts(events)
+    for ev in events:
+        logger.info(
+            "[BallEvents] Event — frame=%s kind=%s lock_confidence=%s phase=%s",
+            ev.frame,
+            ev.kind,
+            ev.lock_confidence,
+            ev.detection_phase or "-",
+        )
     # #region agent log
     _log_event_summary(
         timeline=timeline,
@@ -187,7 +199,7 @@ def run_events(
             ball_samples=ball_samples,
             events_found=counts.model_dump(),
         )
-    return counts, ball_samples
+    return counts, ball_samples, events
 
 
 @dataclass
@@ -208,58 +220,63 @@ class LockEpoch:
 
 
 def _epoch_quality(epoch: LockEpoch) -> tuple[int, int]:
-    """Score an epoch as (on-pitch visible post-lock frames, post-lock frame count)."""
-    if epoch.locked_at_frame is None:
-        return (0, 0)
+    """Score an epoch as (on-pitch visible identified frames, identified frame count)."""
     from backend.app.pipeline.pitch_homography import is_on_pitch
 
     visible = 0
-    post = 0
+    identified = 0
     for s in epoch.target_samples:
-        if s.frame < epoch.locked_at_frame:
+        ok, _, _ = has_target_identification(s, epoch.locked_at_frame)
+        if not ok:
             continue
-        post += 1
+        identified += 1
         if (
             s.target_visible
             and s.target_m is not None
             and is_on_pitch(s.target_m[0], s.target_m[1])
         ):
             visible += 1
-    return (visible, post)
+    return (visible, identified)
+
+
+def _epoch_analyzable(epoch: LockEpoch, *, min_visible: int) -> bool:
+    visible, identified = _epoch_quality(epoch)
+    if identified == 0:
+        return False
+    return visible >= min_visible
 
 
 def run_events_multi(
     epochs: list[LockEpoch],
     *,
     fps: float,
-) -> tuple[PlayerEventCounts, int, LockEpoch | None]:
+) -> tuple[PlayerEventCounts, int, LockEpoch | None, list[DetectedEvent]]:
     """Run the possession FSM per lock epoch and aggregate the results.
 
     Event counts are summed across every epoch clearing a minimum-quality bar
-    (has a lock + EPOCH_MIN_VISIBLE_FRAMES on-pitch visible frames) so a player
-    appearing across several broadcast shots is not undercounted; poor epochs
-    (e.g. a brief off-pitch tail) contribute nothing via the on-pitch gate. The
+    (identified target + EPOCH_MIN_VISIBLE_FRAMES on-pitch visible frames) so a
+    player appearing across several broadcast shots is not undercounted. Epochs
+    with only soft identification (pre-lock OCR/ReID/track) are included. The
     single best epoch (most on-pitch visible frames, tie-break longest) is returned
     for single-track artefacts (heatmap / movement) that cannot merge across re-locks.
     """
     min_visible = _env_int("EPOCH_MIN_VISIBLE_FRAMES", 5)
     total_samples = sum(_count_detections(ep.ball_states) for ep in epochs)
     aggregated = PlayerEventCounts()
+    all_events: list[DetectedEvent] = []
     best: LockEpoch | None = None
     best_score = (-1, -1)
     counted = 0
     for ep in epochs:
-        if ep.locked_at_frame is None:
+        if not _epoch_analyzable(ep, min_visible=min_visible):
             continue
-        visible, post = _epoch_quality(ep)
-        if visible < min_visible:
-            continue
-        counts, _ = run_events(
+        counts, _, events = run_events(
             ep.ball_states,
             ep.target_samples,
             fps=fps,
             locked_at_frame=ep.locked_at_frame,
         )
+        all_events.extend(events)
         aggregated = PlayerEventCounts(
             Pass=aggregated.Pass + counts.Pass,
             Shot=aggregated.Shot + counts.Shot,
@@ -267,6 +284,7 @@ def run_events_multi(
             Drive=aggregated.Drive + counts.Drive,
         )
         counted += 1
+        visible, post = _epoch_quality(ep)
         score = (visible, post)
         if score > best_score:
             best_score = score
@@ -278,7 +296,7 @@ def run_events_multi(
         (best.start_frame, best.end_frame, best.locked_at_frame) if best else None,
         aggregated.model_dump(),
     )
-    return aggregated, total_samples, best
+    return aggregated, total_samples, best, all_events
 
 
 def _count_detections(ball_states: list[BallState]) -> int:
@@ -302,11 +320,15 @@ def _log_event_summary(
     path = os.environ.get("BALL_EVENTS_SUMMARY_LOG", "").strip()
     if not path:
         return
-    post = [e for e in timeline if e.frame >= locked_at_frame]
+    post = [
+        e
+        for e in timeline
+        if has_target_identification(e.target, locked_at_frame)[0]
+    ]
     possessed = sum(
         1
-        for p in possession
-        if p.frame >= locked_at_frame
+        for e, p in zip(timeline, possession, strict=True)
+        if has_target_identification(e.target, locked_at_frame)[0]
         and p.state
         in (PossessionState.TARGET_POSSESSED, PossessionState.TARGET_POSSESSED_GAP)
     )

@@ -50,15 +50,32 @@ def preprocess_crop_for_ocr(crop: NDArray) -> NDArray:
     return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
 
-def _resolve_inference_device() -> torch.device:
+def resolve_jersey_device_str() -> str:
+    """Resolved jersey classifier device string (``mps``, ``cuda``, or ``cpu``)."""
     pref = os.environ.get("JERSEY_CLS_DEVICE", "auto").lower()
-    if pref == "cuda" and torch.cuda.is_available():
-        return torch.device("cuda")
-    if pref in {"auto", "mps"} and torch.backends.mps.is_available():
-        return torch.device("mps")
     if pref == "cuda":
-        return torch.device("cpu")
-    return torch.device("cpu")
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if pref == "mps":
+        return "mps" if torch.backends.mps.is_available() else "cpu"
+    if pref == "cpu":
+        return "cpu"
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+def _resolve_inference_device() -> torch.device:
+    resolved = resolve_jersey_device_str()
+    pref = os.environ.get("JERSEY_CLS_DEVICE", "auto").lower()
+    if pref == "mps" and resolved == "cpu":
+        logger.error(
+            "JERSEY_CLS_DEVICE=mps but MPS is unavailable (macOS 14+, PyTorch 2.0+)"
+        )
+    elif pref == "cuda" and resolved == "cpu":
+        logger.error("JERSEY_CLS_DEVICE=cuda but CUDA is unavailable")
+    return torch.device(resolved)
 
 
 def _parse_digits_from_ocr(

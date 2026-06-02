@@ -73,5 +73,5 @@ backend/data/videos/
 # Vendored deps (cloned by detection_test/scripts/install_torchreid.sh)
 detection_test/.vendor/
 
-# Cursor debug logs
-.cursor/debug-*.log
+# Cursor (ignore everything)
+.cursor/

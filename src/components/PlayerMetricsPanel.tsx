@@ -16,6 +16,7 @@ const METRIC_CONFIG: { key: MetricKey; label: string; unit?: string }[] = [
   { key: "goals", label: "Goals" },
   { key: "shots", label: "Shots" },
   { key: "passes", label: "Passes" },
+  { key: "drives", label: "Drives" },
   { key: "distanceCoveredKm", label: "Distance covered", unit: "km" },
 ];
 

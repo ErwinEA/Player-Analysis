@@ -2,6 +2,50 @@
 
 Place trained checkpoints here or under `detetction_test/weights/` (preferred for shared tooling).
 
+## Happy path checklist (full `POST /api/analyze`)
+
+Use this on a **new machine** after `pip install -r backend/requirements.txt`. None of the files below are in git (see `.gitignore`).
+
+| # | File | Put it here (first match wins) | Powers | How to get it |
+|---|------|--------------------------------|--------|----------------|
+| 1 | **`mobile_sam.pt`** | `backend/weights/mobile_sam.pt` | Player masks, `foot_x`/`foot_y`, mask-tight OCR/ReID | **Public download** — run `backend/scripts/install_mobile_sam.sh` (installs `mobile_sam` + `timm` and curls the checkpoint), or [MobileSAM weights](https://github.com/ChaoningZhang/MobileSAM/raw/master/weights/mobile_sam.pt) |
+| 2 | **`jersey_number_b0.pt`** | `detetction_test/weights/jersey_number_b0.pt` (or `backend/weights/`) | Fast jersey digit reads (1–99); optional `jersey_number_b0.json` sidecar | **Train** on SoccerNet jersey-2023 — [detetction_test/training/jersey_number/README.md](../../detetction_test/training/jersey_number/README.md) (`SOCCERNET_PASS` + `train_jersey.py`). Without it: EasyOCR-only (slower, weaker lock). |
+| 3 | **`osnet_x1_0_soccernet.pth`** | `detetction_test/weights/osnet_x1_0_soccernet.pth` (or `backend/weights/`) | Appearance lock / ReID fallback when jersey OCR is ambiguous | **Train** on SoccerNet-ReID — [detetction_test/training/reid_osnet/README.md](../../detetction_test/training/reid_osnet/README.md). Without it: generic ImageNet OSNet (weaker on broadcast footage). Alias: `osnet_soccer_reid.pth`. |
+| 4 | **`yolov8n_ball.pt`** | `detetction_test/weights/yolov8n_ball.pt` then `backend/weights/yolov8n_ball.pt` | Ball detection → possession / pass / shot stats | **No public URL in this repo** — train a YOLOv8n single-class ball model (Ultralytics) on your labeled clips, or copy a teammate’s `.pt`. Without it: analyze still runs; ball events show `no_ball_weights`. |
+
+**Also required (auto):** person detector **`yolov8n.pt`** — Ultralytics downloads on first analyze unless `YOLO_WEIGHTS` points elsewhere (e.g. repo-root `yolov8m.pt`).
+
+**Python extras (not weights):**
+
+| Component | Install |
+|-----------|---------|
+| MobileSAM | `pip install "git+https://github.com/ChaoningZhang/MobileSAM.git"` + `timm` — or `backend/scripts/install_mobile_sam.sh` |
+| OSNet / torchreid | `detetction_test/scripts/install_torchreid.sh` (from repo root) |
+
+**Verify from repo root:**
+
+```bash
+check() { test -f "$1" && echo "OK  $1" || echo "MISS $1"; }
+check backend/weights/mobile_sam.pt
+check detetction_test/weights/jersey_number_b0.pt
+check detetction_test/weights/osnet_x1_0_soccernet.pth
+check detetction_test/weights/yolov8n_ball.pt || check backend/weights/yolov8n_ball.pt
+curl -s http://localhost:8000/health | python3 -m json.tool   # mobile_sam.status should be ok
+```
+
+**Degraded mode if something is missing:**
+
+| Missing | Effect |
+|---------|--------|
+| `mobile_sam.pt` | No masks / foot heatmap points; bbox-only rows |
+| `jersey_number_b0.pt` | EasyOCR jersey digits only |
+| `osnet_x1_0_soccernet.pth` | Generic pretrained OSNet embeddings |
+| `yolov8n_ball.pt` | Ball event stats disabled |
+
+See also [detetction_test/WEIGHTS.md](../../detetction_test/WEIGHTS.md) for the sandbox detection pipeline (`yolo_soccer.pt`, etc.).
+
+---
+
 ## Ball detector (YOLOv8)
 
 | File | Purpose |

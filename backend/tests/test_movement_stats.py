@@ -6,6 +6,7 @@ from backend.app.pipeline.movement_stats import (
     MovementStatsConfig,
     compute_movement_stats,
     compute_movement_stats_from_rows,
+    foot_position_pixels,
 )
 from backend.app.pipeline.pitch_homography import build_calibration
 from backend.app.schemas import Row
@@ -20,16 +21,31 @@ def test_constant_speed_metrics():
 
 
 def test_sprint_with_row_models():
-    rows = [
-        Row(t=0.0, frame=0, track=1, player=10, x=0.5, y=0.5, bbox=[0, 0, 10, 10]),
-        Row(t=1.0, frame=30, track=1, player=10, x=0.5, y=0.5, bbox=[0, 0, 10, 18]),
-        Row(t=2.0, frame=60, track=1, player=10, x=0.5, y=0.5, bbox=[0, 0, 10, 26]),
-    ]
     cal = build_calibration(
         "test",
         [[115, 425], [905, 495], [1265, 705], [35, 705]],
         image_size=(1280, 720),
     )
+    fw, fh = cal.image_size
+    # Foot pixels inside the calibrated quad (corner bboxes map off-pitch and are filtered).
+    foot_ys_px = [550.0, 600.0, 650.0]
+    rows = []
+    for i, foot_y_px in enumerate(foot_ys_px):
+        bbox = [550.0, foot_y_px - 80.0, 650.0, foot_y_px]
+        foot_x_px, _ = foot_position_pixels(bbox)
+        rows.append(
+            Row(
+                t=float(i),
+                frame=i * 30,
+                track=1,
+                player=10,
+                x=0.5,
+                y=0.5,
+                bbox=bbox,
+                foot_x=foot_x_px / fw,
+                foot_y=foot_y_px / fh,
+            )
+        )
     stats = compute_movement_stats_from_rows(
         rows,
         fps=30.0,

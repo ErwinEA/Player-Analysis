@@ -66,6 +66,7 @@ function metricsFromEvents(
     goals: ec.Goal,
     shots: ec.Shot,
     passes: ec.Pass,
+    drives: ec.Drive,
   };
 }
 
@@ -222,7 +223,7 @@ export function Dashboard() {
       if (response.event_counts && response.provenance === "inferred") {
         const ec = response.event_counts;
         setGameplayAnalysis({
-          summary: `Inferred: ${ec.Pass} passes, ${ec.Shot} shots, ${ec.Goal} goals.`,
+          summary: `Inferred: ${ec.Pass} passes, ${ec.Shot} shots, ${ec.Goal} goals, ${ec.Drive} drives.`,
         });
       } else {
         setGameplayAnalysis(null);

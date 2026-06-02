@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { hasPitchCalibration } from "@/lib/api";
 import { calibrationKeyFromFilename } from "@/lib/videoFrame";
 import type { MobileSamHealth } from "@/lib/api";
@@ -36,28 +36,32 @@ export function UploadAnalyzePanel({
   mobileSamHealth = null,
 }: UploadAnalyzePanelProps) {
   const [checkingCalibration, setCheckingCalibration] = useState(false);
+  const calibrationCheckRef = useRef(0);
 
   const calibrationKey = file ? calibrationKeyFromFilename(file.name) : null;
 
-  const checkCalibration = useCallback(async () => {
+  useEffect(() => {
     if (!calibrationKey) {
       onCalibrationStatusChange(false);
       return;
     }
+    const checkId = ++calibrationCheckRef.current;
     setCheckingCalibration(true);
-    try {
-      const exists = await hasPitchCalibration(calibrationKey);
-      onCalibrationStatusChange(exists);
-    } catch {
-      onCalibrationStatusChange(false);
-    } finally {
-      setCheckingCalibration(false);
-    }
+    void (async () => {
+      try {
+        const exists = await hasPitchCalibration(calibrationKey);
+        if (checkId !== calibrationCheckRef.current) return;
+        onCalibrationStatusChange(exists);
+      } catch {
+        if (checkId !== calibrationCheckRef.current) return;
+        onCalibrationStatusChange(false);
+      } finally {
+        if (checkId === calibrationCheckRef.current) {
+          setCheckingCalibration(false);
+        }
+      }
+    })();
   }, [calibrationKey, onCalibrationStatusChange]);
-
-  useEffect(() => {
-    void checkCalibration();
-  }, [checkCalibration]);
 
   const handleFileChange = (next: File | null) => {
     onFileChange(next);

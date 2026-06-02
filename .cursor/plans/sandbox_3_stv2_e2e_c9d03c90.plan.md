@@ -325,8 +325,8 @@ Changes in `[src/components/Dashboard.tsx](src/components/Dashboard.tsx)`, `[src
 
 1. Resolve half video under `STV2_DATA_ROOT` (fail fast with clear error if missing).
 2. **Calibration:** run STv2 submodule `generate_calibration_mappings` + apply (or load precomputed `homography.npy` from interim if dataset ships it) → product `PitchCalibration` or metre projector compatible with `[movement_stats](backend/app/pipeline/movement_stats.py)`.
-3. **Detect + track:** STv2 `detect_objects` / MOT CSV → normalize to internal detections JSON (same shape as `[detetction_test](detetction_test/)` `detections.json` frames/tracks).
-4. **Lock player:** port `[detetction_test/identify.py](detetction_test/identify.py)` scoring (number + color; face optional) — **do not** assume InsightFace installed unless already in env.
+3. **Detect + track:** STv2 `detect_objects` / MOT CSV → normalize to internal detections JSON (same shape as `[detection_test](detection_test/)` `detections.json` frames/tracks).
+4. **Lock player:** port `[detection_test/identify.py](detection_test/identify.py)` scoring (number + color; face optional) — **do not** assume InsightFace installed unless already in env.
 5. **Trajectory:** foot bbox → homography → metre points; same movement + heatmap as Phase A output shape.
 6. **Ball:** invoke STv2 `[src/ball_tracking/](https://github.com/AtomScott/SoccerTrack-v2/tree/main/src/ball_tracking)` (TrackNetX or BoT-SORT path — **pick one in implementation task  B-07** after inspecting submodule README/scripts).
 7. **Events (inferred):** Phase B milestone 1 = `event_counts` empty or `provenance=inferred` with ball_samples only; milestone 2 = BAS baseline or proximity heuristics (separate task block **B-events** — do not block Phase B “done” on trained BAS).
@@ -437,7 +437,7 @@ Not in initial execution scope; documented for later:
 
 | ID   | Task                                                                                                                 |
 | ---- | -------------------------------------------------------------------------------------------------------------------- |
-| 6-01 | Copy/adapt identify runner into `stv2_sandbox/phase_b/identify.py` (import from `detetction_test` or thin duplicate) |
+| 6-01 | Copy/adapt identify runner into `stv2_sandbox/phase_b/identify.py` (import from `detection_test` or thin duplicate) |
 | 6-02 | `phase_b/trajectory.py` — locked track → metre points                                                                |
 | 6-03 | Reuse movement + heatmap builders (same as Phase A output)                                                           |
 | 6-04 | `phase_b/ball_track.py` — subprocess + frame-aligned ball positions JSON                                             |
@@ -473,7 +473,7 @@ Not in initial execution scope; documented for later:
 - **Jersey-only filter** may lock wrong player if duplicate numbers on pitch — surface warning in UI when multiple `track_id`s match.
 - **STv2 video path naming** may differ from our `videos/` convention — resolved in task 5-01, not assumed here.
 - **Phase B events** are explicitly split to Block 8; Phase B ships movement + heatmap + ball track metadata first.
-- **Sidebar photo** is not sent to API today; Phase B identify should match `[detetction_test](detetction_test/)` optional photo behavior unless you add multipart later.
+- **Sidebar photo** is not sent to API today; Phase B identify should match `[detection_test](detection_test/)` optional photo behavior unless you add multipart later.
 
 ## Success criteria
 

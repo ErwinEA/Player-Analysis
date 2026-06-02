@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import base64
+import io
+import json
 
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.main import app
+
+VALID_DETAILS = json.dumps({"name": "Test", "jerseyNumber": 10})
 
 
 @pytest.fixture()
@@ -82,3 +86,33 @@ def test_save_pitch_calibration_boundary_points(client):
     )
     assert save.status_code == 200
     assert "template_url" in save.json()
+
+
+def test_analyze_rejects_invalid_calibration_name(client):
+    res = client.post(
+        "/api/analyze",
+        data={
+            "details": VALID_DETAILS,
+            "calibration_name": "bad name!",
+        },
+        files={"video": ("clip.mp4", io.BytesIO(b"not-a-real-video"), "video/mp4")},
+    )
+    assert res.status_code == 400
+    assert res.json()["detail"] == (
+        "Invalid calibration name. Use letters, digits, underscore, or hyphen only."
+    )
+
+
+def test_analyze_rejects_invalid_calibration_name(client):
+    res = client.post(
+        "/api/analyze",
+        data={
+            "details": VALID_DETAILS,
+            "calibration_name": "bad name!",
+        },
+        files={"video": ("clip.mp4", io.BytesIO(b"not-a-real-video"), "video/mp4")},
+    )
+    assert res.status_code == 400
+    assert res.json()["detail"] == (
+        "Invalid calibration name. Use letters, digits, underscore, or hyphen only."
+    )

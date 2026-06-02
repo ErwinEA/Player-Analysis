@@ -257,10 +257,7 @@ async def analyze(
 
         cal_key: str | None = None
         if calibration_name and calibration_name.strip():
-            try:
-                cal_key = normalize_calibration_name(calibration_name.strip())
-            except HTTPException:
-                cal_key = None
+            cal_key = normalize_calibration_name(calibration_name.strip())
         return run_pipeline(
             tmp_path,
             player_details,

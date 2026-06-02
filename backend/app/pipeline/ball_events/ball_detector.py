@@ -49,7 +49,7 @@ def resolve_ball_weights(explicit: str | None = None) -> str | None:
     if env and Path(env).is_file():
         return env
     for candidate in (
-        _REPO_ROOT / "detetction_test" / "weights" / "yolov8n_ball.pt",
+        _REPO_ROOT / "detection_test" / "weights" / "yolov8n_ball.pt",
         _REPO_ROOT / "backend" / "weights" / "yolov8n_ball.pt",
     ):
         if candidate.is_file():
@@ -212,7 +212,7 @@ class BallDetector:
         if resolved is None:
             logger.warning(
                 "Ball weights not found — ball events disabled. "
-                "Place yolov8n_ball.pt in detetction_test/weights/ or set BALL_WEIGHTS."
+                "Place yolov8n_ball.pt in detection_test/weights/ or set BALL_WEIGHTS."
             )
             return
 

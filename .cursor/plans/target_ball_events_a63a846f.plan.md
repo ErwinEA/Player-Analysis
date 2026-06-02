@@ -67,7 +67,7 @@ Create package:
 - [`backend/app/pipeline/ball_events/__init__.py`](backend/app/pipeline/ball_events/__init__.py)
 - [`backend/app/pipeline/ball_events/ball_detector.py`](backend/app/pipeline/ball_events/ball_detector.py)
 
-Mirror env pattern from [`backend/app/pipeline/detector.py`](backend/app/pipeline/detector.py). YOLO detect pattern from [`detetction_test/ball_detect.py`](detetction_test/ball_detect.py) but **do not** fall back to COCO `yolov8n.pt` — if weights missing, `available = False` and log warning (no exception).
+Mirror env pattern from [`backend/app/pipeline/detector.py`](backend/app/pipeline/detector.py). YOLO detect pattern from [`detection_test/ball_detect.py`](detection_test/ball_detect.py) but **do not** fall back to COCO `yolov8n.pt` — if weights missing, `available = False` and log warning (no exception).
 
 ### Env vars (detector)
 
@@ -75,14 +75,14 @@ Mirror env pattern from [`backend/app/pipeline/detector.py`](backend/app/pipelin
 |-----|---------|---------|
 | `BALL_WEIGHTS` | resolve below | Weights file path |
 | `BALL_CONF` | `0.25` | Min detection confidence |
-| `BALL_IOU` | `0.5` | NMS IoU (match detetction_test) |
+| `BALL_IOU` | `0.5` | NMS IoU (match detection_test) |
 | `BALL_KALMAN_GAP_MAX_FRAMES` | `22` | Max consecutive predict frames before Kalman reset |
 | `ENABLE_BALL_EVENTS` | `1` | Kill-switch in `run_pipeline` |
 
 **Weights resolution order** (document in [`backend/weights/README.md`](backend/weights/README.md)):
 
 1. `BALL_WEIGHTS` env if file exists
-2. `detetction_test/weights/yolov8n_ball.pt`
+2. `detection_test/weights/yolov8n_ball.pt`
 3. `backend/weights/yolov8n_ball.pt`
 
 File is gitignored; must be placed manually. **Not in repo today.**

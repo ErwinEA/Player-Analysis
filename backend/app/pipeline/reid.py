@@ -14,7 +14,7 @@ from backend.app.pipeline.inference_device import resolve_torch_device_str
 logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_DET_TEST = _REPO_ROOT / "detetction_test"
+_DET_TEST = _REPO_ROOT / "detection_test"
 _WEIGHTS_DIR = _DET_TEST / "weights"
 _BACKEND_WEIGHTS = Path(__file__).resolve().parents[2] / "weights"
 
@@ -69,7 +69,7 @@ def get_reid_extractor():
 
         if weights is None:
             logger.info(
-                "%s not found under detetction_test/weights/; "
+                "%s not found under detection_test/weights/; "
                 "using ImageNet-pretrained osnet_x1_0 (set REID_WEIGHTS for SoccerNet weights)",
                 _DEFAULT_CHECKPOINT,
             )

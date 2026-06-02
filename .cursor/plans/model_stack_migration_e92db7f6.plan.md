@@ -1,6 +1,6 @@
 ---
 name: Model Stack Migration
-overview: Upgrade detetction_test with OSNet-x1_0 fine-tuning on SoccerNet-ReID (in-repo training + DeepSORT integration), plus wiring for user-supplied YOLO/jersey/ball weights.
+overview: Upgrade detection_test with OSNet-x1_0 fine-tuning on SoccerNet-ReID (in-repo training + DeepSORT integration), plus wiring for user-supplied YOLO/jersey/ball weights.
 todos:
   - id: weights-contract
     content: Define weights/ layout + WEIGHTS.md for YOLO, jersey, ball (user-supplied); document osnet_x1_0_soccernet.pth from training
@@ -42,10 +42,10 @@ isProject: false
 
 | Decision                            | Your choice                                                                                                  |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Integration target                  | **[detetction_test/](detetction_test/) sandbox only** — backend FastAPI unchanged until validated            |
+| Integration target                  | **[detection_test/](detection_test/) sandbox only** — backend FastAPI unchanged until validated            |
 | Face (InsightFace)                  | **Optional** — used when `--photo` is provided; jersey/ReID/color drive lock otherwise                       |
 | OSNet training                      | **In scope** — fine-tune OSNet-x1_0 on SoccerNet-ReID per spec below                                         |
-| Other training (YOLO, jersey, ball) | **You supply weights** — drop into `detetction_test/weights/`                                                |
+| Other training (YOLO, jersey, ball) | **You supply weights** — drop into `detection_test/weights/`                                                |
 | Jersey numbers                      | **EfficientNet-B0 primary + EasyOCR fallback**                                                               |
 | Ball                                | **Sandbox only** — separate JSON field or sidecar file, not wired to Next.js/API                             |
 | Ship order                          | **1) YOLO → 2) OSNet tracker → 3) Jersey classifier → 4) Ball**                                              |
@@ -56,7 +56,7 @@ isProject: false
 
 ```mermaid
 flowchart TB
-  subgraph today [Current detetction_test]
+  subgraph today [Current detection_test]
     V1[Video] --> F1[extract_frames]
     F1 --> Y1[YOLOv8m COCO person]
     Y1 --> D1[DeepSORT + MobileNet]
@@ -83,8 +83,8 @@ flowchart TB
 
 **Not a ground-up rebuild.** These stay as-is:
 
-- Frame loop in [detetction_test/run_detect.py](detetction_test/run_detect.py)
-- Lock/re-lock state machine in [detetction_test/identify.py](detetction_test/identify.py) (~500 lines)
+- Frame loop in [detection_test/run_detect.py](detection_test/run_detect.py)
+- Lock/re-lock state machine in [detection_test/identify.py](detection_test/identify.py) (~500 lines)
 - Weighted scoring API: `face, number_conf, name_sim, color`
 - JSON contracts: `detections.json`, `identified.json`
 
@@ -93,10 +93,10 @@ flowchart TB
 
 | Component                 | File(s)                                                                                                                        | Effort                                   |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| Detector weights + config | [detetction_test/detect.py](detetction_test/detect.py), CLI                                                                    | Low                                      |
-| ReID embedder             | [detetction_test/tracker.py](detetction_test/tracker.py)                                                                       | Low — library already supports TorchReID |
-| Jersey classifier         | new `jersey_number.py`, refactor [detetction_test/ocr_profile.py](detetction_test/ocr_profile.py)                              | Medium                                   |
-| Optional face             | [detetction_test/run_identify.py](detetction_test/run_identify.py), [detetction_test/identify.py](detetction_test/identify.py) | Low                                      |
+| Detector weights + config | [detection_test/detect.py](detection_test/detect.py), CLI                                                                    | Low                                      |
+| ReID embedder             | [detection_test/tracker.py](detection_test/tracker.py)                                                                       | Low — library already supports TorchReID |
+| Jersey classifier         | new `jersey_number.py`, refactor [detection_test/ocr_profile.py](detection_test/ocr_profile.py)                              | Medium                                   |
+| Optional face             | [detection_test/run_identify.py](detection_test/run_identify.py), [detection_test/identify.py](detection_test/identify.py) | Low                                      |
 | Ball (sandbox)            | new `ball_detect.py`, extend `run_detect.py` output                                                                            | Low–medium                               |
 
 
@@ -129,9 +129,9 @@ Phase 2 integration can use **Market-1501 pretrained OSNet** (torchreid default)
 
 | File                        | Location                                       | Notes                                      |
 | --------------------------- | ---------------------------------------------- | ------------------------------------------ |
-| `osnet_x1_0_soccernet.pth`  | `detetction_test/weights/`                     | Full `state_dict` from best val checkpoint |
+| `osnet_x1_0_soccernet.pth`  | `detection_test/weights/`                     | Full `state_dict` from best val checkpoint |
 | `osnet_x1_0_soccernet.onnx` | same                                           | Optional deployment export                 |
-| `reid_metrics.json`         | `detetction_test/training/reid_osnet/outputs/` | Rank-1, mAP on test split                  |
+| `reid_metrics.json`         | `detection_test/training/reid_osnet/outputs/` | Rank-1, mAP on test split                  |
 
 
 Symlink or copy to `osnet_soccer_reid.pth` for tracker default path if we keep one canonical name in `WEIGHTS.md`.
@@ -146,7 +146,7 @@ Symlink or copy to `osnet_soccer_reid.pth` for tracker default path if we keep o
 | `yolov8n_ball.pt`                          | Ball detector                      |
 
 
-Document formats in `detetction_test/WEIGHTS.md`.
+Document formats in `detection_test/WEIGHTS.md`.
 
 ---
 
@@ -158,10 +158,10 @@ Document formats in `detetction_test/WEIGHTS.md`.
 
 **Implementation:**
 
-1. Update [detetction_test/detect.py](detetction_test/detect.py):
+1. Update [detection_test/detect.py](detection_test/detect.py):
   - Default weights path via env `YOLO_WEIGHTS` (already pattern exists).
   - Keep `classes=[0]` only if weights remain COCO; if soccer-trained single-class model, drop class filter or use soccer class id from training config.
-2. Update [detetction_test/README.md](detetction_test/README.md) with new default weights and `--weights` examples.
+2. Update [detection_test/README.md](detection_test/README.md) with new default weights and `--weights` examples.
 
 **Validation (on `testmatch2`):**
 
@@ -180,11 +180,11 @@ Document formats in `detetction_test/WEIGHTS.md`.
 
 ### 2a — Dataset preparation
 
-**Location:** configurable; default `SOCCERNET_DATA=/data/soccernet/` (document env var; allow project-local `detetction_test/data/soccernet/` for dev if `/data` unavailable).
+**Location:** configurable; default `SOCCERNET_DATA=/data/soccernet/` (document env var; allow project-local `detection_test/data/soccernet/` for dev if `/data` unavailable).
 
 1. **Download** via official API:
   - `SoccerNet.Downloader` — tracking annotations + videos
-  - Script: `detetction_test/training/reid_osnet/download_soccernet.py`
+  - Script: `detection_test/training/reid_osnet/download_soccernet.py`
 2. **Extract player crops** (`extract_crops.py`):
   - Per video: read frame, parse `tracking_data.json`, crop bboxes
   - Save: `{data_root}/player_crops/{player_id}/{jersey_number}/{frame_id}.jpg`
@@ -247,7 +247,7 @@ Document formats in `detetction_test/WEIGHTS.md`.
 
 ### 2f — DeepSORT integration
 
-`deep-sort-realtime` supports `embedder='torchreid'` natively. Update [detetction_test/tracker.py](detetction_test/tracker.py):
+`deep-sort-realtime` supports `embedder='torchreid'` natively. Update [detection_test/tracker.py](detection_test/tracker.py):
 
 ```python
 DeepSort(
@@ -263,8 +263,8 @@ DeepSort(
 
 **Also:**
 
-- Add `torchreid` to [detetction_test/requirements.txt](detetction_test/requirements.txt) + `SoccerNet` downloader dep
-- CLI: `--embedder`, `--reid-weights` on [detetction_test/run_detect.py](detetction_test/run_detect.py)
+- Add `torchreid` to [detection_test/requirements.txt](detection_test/requirements.txt) + `SoccerNet` downloader dep
+- CLI: `--embedder`, `--reid-weights` on [detection_test/run_detect.py](detection_test/run_detect.py)
 - Record embedder + weights path in `detections.json` `config`
 - Fallback: `--embedder mobilenet` until trained weights exist
 
@@ -305,22 +305,22 @@ sequenceDiagram
 
 ### 3a — Runtime integration
 
-1. New [detetction_test/jersey_number.py](detetction_test/jersey_number.py):
+1. New [detection_test/jersey_number.py](detection_test/jersey_number.py):
   - `JerseyNumberClassifier.predict(crop) -> (number | None, confidence)`
   - Threshold env `JERSEY_CLS_MIN_CONF` (e.g. 0.75).
-2. Refactor [detetction_test/ocr_profile.py](detetction_test/ocr_profile.py) → `**JerseyNameOCR`** (EasyOCR for names only; remove digit path from primary flow).
-3. Hybrid in identify scoring ([detetction_test/identify.py](detetction_test/identify.py) `_score_signals`):
+2. Refactor [detection_test/ocr_profile.py](detection_test/ocr_profile.py) → `**JerseyNameOCR`** (EasyOCR for names only; remove digit path from primary flow).
+3. Hybrid in identify scoring ([detection_test/identify.py](detection_test/identify.py) `_score_signals`):
   - Call classifier first on number crop.
   - If `conf < threshold` or class is `unknown`, fall back to EasyOCR `read_number`.
   - `number_conf` fed to weighted score unchanged.
 
-### 3b — Optional face ([detetction_test/run_identify.py](detetction_test/run_identify.py))
+### 3b — Optional face ([detection_test/run_identify.py](detection_test/run_identify.py))
 
 - Make `--photo` optional.
 - When absent: set `face_weight=0` in config or use a `NullFaceMatcher` returning 0.0; adjust initial lock to rely on `number` + `color` + cumulative ReID cues (may need slightly lower `lock_threshold` — tune on validation clips).
 - When present: current InsightFace behavior unchanged.
 
-**Validation (from [detetction_test/README.md](detetction_test/README.md) checklist):**
+**Validation (from [detection_test/README.md](detection_test/README.md) checklist):**
 
 - Easy lock with photo + visible back.
 - Re-lock after 60-frame absence using number.
@@ -339,8 +339,8 @@ sequenceDiagram
 
 **Implementation:**
 
-1. New [detetction_test/ball_detect.py](detetction_test/ball_detect.py) — load `weights/yolov8n_ball.pt`.
-2. Extend [detetction_test/run_detect.py](detetction_test/run_detect.py):
+1. New [detection_test/ball_detect.py](detection_test/ball_detect.py) — load `weights/yolov8n_ball.pt`.
+2. Extend [detection_test/run_detect.py](detection_test/run_detect.py):
   - Optional `--detect-ball` flag.
   - Add per-frame `balls: [{ bbox, conf }]` to `detections.json` (backward compatible — new key).
 3. Document in README; explicitly **not** consumed by `run_identify.py` or backend.
@@ -351,7 +351,7 @@ sequenceDiagram
 
 ## OCR for player names (PaddleOCR replacement)
 
-**Decision:** Do **not** add PaddleOCR. Keep **EasyOCR** for name crops only (already in [detetction_test/requirements.txt](detetction_test/requirements.txt); backend abandoned Paddle for the same reason).
+**Decision:** Do **not** add PaddleOCR. Keep **EasyOCR** for name crops only (already in [detection_test/requirements.txt](detection_test/requirements.txt); backend abandoned Paddle for the same reason).
 
 If EasyOCR quality is insufficient after jersey upgrade, evaluate **docTR** as a drop-in replacement in `JerseyNameOCR` only — not in scope unless Phase 3 validation fails on names.
 
@@ -359,7 +359,7 @@ If EasyOCR quality is insufficient after jersey upgrade, evaluate **docTR** as a
 
 ## Dependencies to add
 
-**Core** ([detetction_test/requirements.txt](detetction_test/requirements.txt)):
+**Core** ([detection_test/requirements.txt](detection_test/requirements.txt)):
 
 ```
 torchreid              # pip install from KaiyangZhou/deep-person-reid
@@ -369,7 +369,7 @@ torchvision
 # existing: ultralytics, deep-sort-realtime, easyocr, insightface
 ```
 
-**Training-only** (`detetction_test/training/reid_osnet/requirements-train.txt`):
+**Training-only** (`detection_test/training/reid_osnet/requirements-train.txt`):
 
 ```
 pyyaml                 # config
@@ -384,7 +384,7 @@ Pin versions after GPU env smoke test. **Note:** SoccerNet download + CUDA train
 ## Suggested folder layout (new)
 
 ```
-detetction_test/
+detection_test/
 ├── weights/                         # gitignored
 │   ├── osnet_x1_0_soccernet.pth     # produced by Phase 2 training
 │   ├── osnet_x1_0_soccernet.onnx
@@ -407,7 +407,7 @@ detetction_test/
 └── WEIGHTS.md
 ```
 
-Data on disk (gitignored): `SOCCERNET_DATA` or `detetction_test/data/soccernet/player_crops/`.
+Data on disk (gitignored): `SOCCERNET_DATA` or `detection_test/data/soccernet/player_crops/`.
 
 ---
 
@@ -450,7 +450,7 @@ Data on disk (gitignored): `SOCCERNET_DATA` or `detetction_test/data/soccernet/p
 - Merging into [backend/app/pipeline/](backend/app/pipeline/) or FastAPI — until sandbox sign-off
 - Next.js / heat map wiring for ball
 - Replacing EasyOCR for names (unless validation fails)
-- Removing [detetction_test/color_score.py](detetction_test/color_score.py) — kept as weak tie-breaker
+- Removing [detection_test/color_score.py](detection_test/color_score.py) — kept as weak tie-breaker
 
 ---
 

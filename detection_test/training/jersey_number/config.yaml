@@ -1,6 +1,6 @@
 # EfficientNet-B0 jersey number classifier (SoccerNet jersey-2023)
 
-data_root: null  # SOCCERNET_DATA or detetction_test/data/soccernet
+data_root: null  # SOCCERNET_DATA or detection_test/data/soccernet
 
 model: efficientnet_b0  # efficientnet_b0 | resnet18
 input_size: 224

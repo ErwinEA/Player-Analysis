@@ -53,7 +53,7 @@ def is_valid_person_bbox(
 
     A standing/running player is always taller than wide at broadcast distance, so a low
     height/width aspect ratio (``min_aspect``) filters scoreboard banners and grass patches.
-    Env tunables mirror ``detetction_test/bbox_utils.py``.
+    Env tunables mirror ``detection_test/bbox_utils.py``.
     """
     if len(frame_shape) < 2:
         return False

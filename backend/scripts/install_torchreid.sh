@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Install torchreid (OSNet) into backend/.venv from detetction_test vendor tree.
+# Install torchreid (OSNet) into backend/.venv from detection_test vendor tree.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VENDOR="$(cd "$ROOT/../detetction_test" && pwd)/.vendor/deep-person-reid"
+VENDOR="$(cd "$ROOT/../detection_test" && pwd)/.vendor/deep-person-reid"
 
 if [[ ! -d "$ROOT/.venv" ]]; then
   echo "Create backend venv first: cd backend && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
@@ -11,7 +11,7 @@ if [[ ! -d "$ROOT/.venv" ]]; then
 fi
 
 if [[ ! -d "$VENDOR" ]]; then
-  echo "Missing $VENDOR — run detetction_test/scripts/install_torchreid.sh first."
+  echo "Missing $VENDOR — run detection_test/scripts/install_torchreid.sh first."
   exit 1
 fi
 

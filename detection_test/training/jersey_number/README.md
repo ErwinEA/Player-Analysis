@@ -5,7 +5,7 @@ Train a 1–99 + `unknown` jersey digit classifier on **SoccerNet jersey-2023** 
 ## Prerequisites
 
 ```bash
-cd detetction_test
+cd detection_test
 source test2/bin/activate   # or your venv
 pip install -r training/jersey_number/requirements-train.txt
 export SOCCERNET_PASS='your_nda_password'
@@ -24,7 +24,7 @@ Uses:
 downloader.downloadDataTask(task="jersey-2023", split=["train", "test", "challenge"])
 ```
 
-Data lands under `detetction_test/data/soccernet/jersey-2023/`.
+Data lands under `detection_test/data/soccernet/jersey-2023/`.
 
 **Note:** Training reads images directly from `train.zip` / `test.zip` — no full unpack required (saves disk space).
 
@@ -49,8 +49,8 @@ python train_jersey.py
 
 Exports:
 
-- `detetction_test/weights/jersey_number_b0.pt`
-- `detetction_test/weights/jersey_number_b0.json`
+- `detection_test/weights/jersey_number_b0.pt`
+- `detection_test/weights/jersey_number_b0.json`
 
 ## 4. Evaluate
 
@@ -60,7 +60,7 @@ python eval_jersey.py
 
 ## Runtime (sandbox)
 
-`detetction_test/jersey_number.py` loads the exported weights automatically when present; otherwise falls back to EasyOCR.
+`detection_test/jersey_number.py` loads the exported weights automatically when present; otherwise falls back to EasyOCR.
 
 Used by `run_identify.py` via `JerseyProfileReader`.
 

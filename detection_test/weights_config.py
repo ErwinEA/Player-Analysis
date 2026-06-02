@@ -1,4 +1,4 @@
-"""Default paths for model weights under detetction_test/weights/."""
+"""Default paths for model weights under detection_test/weights/."""
 
 from __future__ import annotations
 

@@ -1,17 +1,17 @@
 # Model weights (backend)
 
-Place trained checkpoints here or under `detetction_test/weights/` (preferred for shared tooling).
+Place trained checkpoints here or under `detection_test/weights/` (preferred for shared tooling).
 
 ## Happy path checklist (full `POST /api/analyze`)
 
-Use on a **new machine** after `pip install -r backend/requirements.txt`. Checkpoints are gitignored (not in clone). Paths use the repo folder name `detetction_test` (intentional spelling).
+Use on a **new machine** after `pip install -r backend/requirements.txt`. Checkpoints are gitignored (not in clone). Paths use the repo folder name `detection_test`.
 
 | # | File | Primary path | Details |
 |---|------|--------------|---------|
 | 1 | `mobile_sam.pt` | `backend/weights/` | [MobileSAM](#mobilesam-legacy-player-segmentation) — `backend/scripts/install_mobile_sam.sh` |
-| 2 | `jersey_number_b0.pt` | `detetction_test/weights/` | [Jersey classifier](#jersey-number-classifier-efficientnet-b0) |
-| 3 | `osnet_x1_0_soccernet.pth` | `detetction_test/weights/` | [OSNet ReID](#osnet-reid-legacy--detection-pipeline) |
-| 4 | `yolov8n_ball.pt` | `detetction_test/weights/` then `backend/weights/` | [Ball YOLO](#ball-detector-yolov8) |
+| 2 | `jersey_number_b0.pt` | `detection_test/weights/` | [Jersey classifier](#jersey-number-classifier-efficientnet-b0) |
+| 3 | `osnet_x1_0_soccernet.pth` | `detection_test/weights/` | [OSNet ReID](#osnet-reid-legacy--detection-pipeline) |
+| 4 | `yolov8n_ball.pt` | `detection_test/weights/` then `backend/weights/` | [Ball YOLO](#ball-detector-yolov8) |
 
 Person detector **`yolov8n.pt`**: Ultralytics auto-download on first analyze (`YOLO_WEIGHTS`).
 
@@ -20,9 +20,9 @@ Person detector **`yolov8n.pt`**: Ultralytics auto-download on first analyze (`Y
 ```bash
 check() { test -f "$1" && echo "OK  $1" || echo "MISS $1"; }
 check backend/weights/mobile_sam.pt
-check detetction_test/weights/jersey_number_b0.pt
-check detetction_test/weights/osnet_x1_0_soccernet.pth
-check detetction_test/weights/yolov8n_ball.pt || check backend/weights/yolov8n_ball.pt
+check detection_test/weights/jersey_number_b0.pt
+check detection_test/weights/osnet_x1_0_soccernet.pth
+check detection_test/weights/yolov8n_ball.pt || check backend/weights/yolov8n_ball.pt
 ```
 
 **Optional API check** (start backend first, e.g. `./scripts/dev_backend.sh` from repo root):
@@ -38,7 +38,7 @@ curl -s http://localhost:8000/health | python3 -m json.tool   # mobile_sam.statu
 | `osnet_x1_0_soccernet.pth` | Generic ImageNet OSNet |
 | `yolov8n_ball.pt` | Ball event stats disabled |
 
-Sandbox YOLO/ReID: [detetction_test/WEIGHTS.md](../../detetction_test/WEIGHTS.md).
+Sandbox YOLO/ReID: [detection_test/WEIGHTS.md](../../detection_test/WEIGHTS.md).
 
 ---
 
@@ -51,7 +51,7 @@ Sandbox YOLO/ReID: [detetction_test/WEIGHTS.md](../../detetction_test/WEIGHTS.md
 **Recommended path:**
 
 ```
-detetction_test/weights/yolov8n_ball.pt
+detection_test/weights/yolov8n_ball.pt
 ```
 
 Or `backend/weights/yolov8n_ball.pt`, or:
@@ -79,7 +79,7 @@ The weights file is **not** committed to git. Place it manually on each machine.
 **Recommended path:**
 
 ```
-detetction_test/weights/jersey_number_b0.pt
+detection_test/weights/jersey_number_b0.pt
 ```
 
 Or `backend/weights/jersey_number_b0.pt`, or `export JERSEY_WEIGHTS=/path/to/checkpoint.pt`.
@@ -95,7 +95,7 @@ If weights are missing, the API falls back to **EasyOCR** digits-only on jersey 
 **Recommended path:**
 
 ```
-detetction_test/weights/osnet_x1_0_soccernet.pth
+detection_test/weights/osnet_x1_0_soccernet.pth
 ```
 
 Alternative (this folder):
@@ -115,7 +115,7 @@ export REID_WEIGHTS=/absolute/path/to/osnet_x1_0_soccernet.pth
 OSNet uses [torchreid](https://github.com/KaiyangZhou/deep-person-reid). Install from the detection test tree:
 
 ```bash
-cd detetction_test
+cd detection_test
 ./scripts/install_torchreid.sh   # if present
 pip install torch torchvision
 ```

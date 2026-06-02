@@ -60,7 +60,7 @@ todos:
     content: "Phase 4.1–4.2: PlayerTracker TRACKER_TYPE botsort/bytetrack, TRACK_BUFFER default 120 for botsort, wire GMC/ReID per spike"
     status: completed
   - id: p4-sandbox-parity
-    content: "Phase 4.3: Mirror tracker env in detetction_test/tracker.py"
+    content: "Phase 4.3: Mirror tracker env in detection_test/tracker.py"
     status: completed
   - id: p4-docs
     content: "Phase 4.4: Update backend/README.md and weights/README.md for tracker env"
@@ -101,7 +101,7 @@ flowchart TB
   SAM --> Ball --> Events
 ```
 
-**Not in scope:** detector swap, `IdentifyEngine` / `detetction_test` identity redesign, jersey tracklet merge offline pass, `boxmot` migration.
+**Not in scope:** detector swap, `IdentifyEngine` / `detection_test` identity redesign, jersey tracklet merge offline pass, `boxmot` migration.
 
 ---
 
@@ -135,7 +135,7 @@ In a throwaway script or REPL (not committed), with project venv:
 
 ### 0.2 Port person bbox validation to backend
 
-- Move or re-export [`detetction_test/bbox_utils.is_valid_person_bbox`](detetction_test/bbox_utils.py) into [`backend/app/pipeline/bbox.py`](backend/app/pipeline/bbox.py) (copy logic, keep env tunables: `BBOX_MIN_SIZE`, `BBOX_MIN_ASPECT`, `BBOX_MAX_*`).
+- Move or re-export [`detection_test/bbox_utils.is_valid_person_bbox`](detection_test/bbox_utils.py) into [`backend/app/pipeline/bbox.py`](backend/app/pipeline/bbox.py) (copy logic, keep env tunables: `BBOX_MIN_SIZE`, `BBOX_MIN_ASPECT`, `BBOX_MAX_*`).
 - Keep [`is_valid_bbox`](backend/app/pipeline/bbox.py) for minimal size checks (OCR path).
 - Add unit tests in `backend/tests/test_bbox.py` (new): reject wide box `w > h`, accept typical player aspect.
 
@@ -318,7 +318,7 @@ Env: `POSSESS_REQUIRE_ON_PITCH=1` (default on when calibration used).
 
 ## Phase 4 — ByteTrack → BoT-SORT (Fix #2)
 
-**Files:** [`backend/app/pipeline/tracker.py`](backend/app/pipeline/tracker.py), [`detetction_test/tracker.py`](detetction_test/tracker.py)
+**Files:** [`backend/app/pipeline/tracker.py`](backend/app/pipeline/tracker.py), [`detection_test/tracker.py`](detection_test/tracker.py)
 
 ### 4.1 Env-driven tracker type
 
@@ -337,7 +337,7 @@ If supported on `IterableSimpleNamespace`:
 
 If Ultralytics cannot load custom OSNet: keep `botsort` **without** embedded ReID; rely on Phase 1 gate + longer buffer only.
 
-### 4.3 Mirror in `detetction_test/tracker.py`
+### 4.3 Mirror in `detection_test/tracker.py`
 
 Same env names for sandbox parity.
 
@@ -416,6 +416,6 @@ Replace absolute path `.cursor/debug-6b7c41.log` with env `BALL_EVENTS_SUMMARY_L
 | [`backend/app/pipeline/tracker.py`](backend/app/pipeline/tracker.py) | `reset()`, BoT-SORT env |
 | [`backend/app/pipeline/run.py`](backend/app/pipeline/run.py) | Scene detector, skip_ball, clears on cut |
 | [`backend/app/pipeline/ball_events/possession.py`](backend/app/pipeline/ball_events/possession.py) | Metres-first + on-pitch |
-| [`detetction_test/tracker.py`](detetction_test/tracker.py) | Mirror tracker env |
+| [`detection_test/tracker.py`](detection_test/tracker.py) | Mirror tracker env |
 | `backend/tests/test_*.py` | New/updated tests |
 | [`backend/README.md`](backend/README.md) | Env docs |

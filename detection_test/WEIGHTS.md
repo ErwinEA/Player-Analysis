@@ -1,6 +1,6 @@
 # Model weights contract
 
-Place trained artifacts in `detetction_test/weights/` (gitignored). Scripts resolve paths via [weights_config.py](weights_config.py) or env vars.
+Place trained artifacts in `detection_test/weights/` (gitignored). Scripts resolve paths via [weights_config.py](weights_config.py) or env vars.
 
 ## Files
 
@@ -24,7 +24,7 @@ Alias: `osnet_soccer_reid.pth` is accepted as an alternative name for the OSNet 
 | `JERSEY_WEIGHTS` | `weights/jersey_number_b0.pt` | EfficientNet jersey classifier |
 | `JERSEY_CLS_MIN_CONF` | `0.75` | Min classifier confidence before OCR fallback |
 | `BALL_WEIGHTS` | `weights/yolov8n_ball.pt` | Ball detector |
-| `SOCCERNET_DATA` | `detetction_test/data/soccernet` | SoccerNet download + crops root |
+| `SOCCERNET_DATA` | `detection_test/data/soccernet` | SoccerNet download + crops root |
 
 ## Formats
 

@@ -12,7 +12,7 @@ See [WEIGHTS.md](WEIGHTS.md) for model weight paths and env vars.
 ## Virtual environment
 
 ```bash
-cd detetction_test
+cd detection_test
 python3 -m venv test
 source test/bin/activate
 pip install -r requirements.txt

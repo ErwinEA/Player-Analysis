@@ -61,7 +61,7 @@ def main() -> None:
     parser.add_argument(
         "--detections",
         type=Path,
-        default=_REPO / "detetction_test/output/testmatch2/detections.json",
+        default=_REPO / "detection_test/output/testmatch2/detections.json",
     )
     parser.add_argument(
         "--calibration",

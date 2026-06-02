@@ -5,7 +5,7 @@ Scripts for downloading SoccerNet ReID data, training OSNet-x1_0, and evaluating
 ## Prerequisites
 
 ```bash
-cd detetction_test
+cd detection_test
 source test/bin/activate
 pip install -r requirements.txt
 ../../scripts/install_torchreid.sh
@@ -16,7 +16,7 @@ SoccerNet ReID download (public share password):
 
 ```bash
 export SOCCERNET_PASS=SoccerNet   # default for reid zips; use NDA password for broadcast videos only
-export SOCCERNET_DATA="/path/to/detetction_test/data/soccernet"  # optional
+export SOCCERNET_DATA="/path/to/detection_test/data/soccernet"  # optional
 ```
 
 ## Download (correct API)

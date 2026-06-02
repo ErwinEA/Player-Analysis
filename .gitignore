@@ -43,7 +43,7 @@ yarn-error.log*
 
 # Keep weight directory placeholders
 !backend/weights/.gitkeep
-!detetction_test/weights/.gitkeep
+!detection_test/weights/.gitkeep
 
 # Videos & large media
 *.mp4
@@ -55,23 +55,23 @@ yarn-error.log*
 # Datasets, caches & generated outputs
 data/stv2/
 data/stv2_hf_cache/
-detetction_test/data/
-detetction_test/output/
-detetction_test/training/*/outputs/
+detection_test/data/
+detection_test/output/
+detection_test/training/*/outputs/
 stv2_sandbox/output/
 debug_ocr/
 backend/runs/
 backend/temp/
 
-# Local Python venvs (detetction_test experiments)
-detetction_test/test/
-detetction_test/test2/
+# Local Python venvs (detection_test experiments)
+detection_test/test/
+detection_test/test2/
 
 # Runtime upload store
 backend/data/videos/
 
-# Vendored deps (cloned by detetction_test/scripts/install_torchreid.sh)
-detetction_test/.vendor/
+# Vendored deps (cloned by detection_test/scripts/install_torchreid.sh)
+detection_test/.vendor/
 
 # Cursor debug logs
 .cursor/debug-*.log

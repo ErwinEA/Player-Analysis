@@ -51,7 +51,7 @@ On first run, Ultralytics downloads `yolov8n.pt` automatically (unless you set `
 | `NAME_MIN_CONF` | `0.35` | EasyOCR confidence floor to count a name reading as a vote |
 | `NAME_MIN_RATIO` | `0.6` | Min fuzzy similarity (0-1) between OCR'd name and the user's name |
 | `OCR_MIN_CROP_HEIGHT` | `64` | Upscale jersey crops shorter than this before OCR |
-| `JERSEY_WEIGHTS` | `detetction_test/weights/jersey_number_b0.pt` | EfficientNet jersey classifier checkpoint |
+| `JERSEY_WEIGHTS` | `detection_test/weights/jersey_number_b0.pt` | EfficientNet jersey classifier checkpoint |
 | `JERSEY_CLS_MIN_CONF` | `0.75` | Min classifier confidence for a hard number read |
 | `JERSEY_TARGET_MIN_CONF` | `0.55` | Min prob on target jersey class (also requires agreement with argmax) |
 | `JERSEY_SOFT_MIN_CONF` | `0.25` | Soft classifier accept before OCR fallback |
@@ -258,7 +258,7 @@ backend/
 
 ### ReID weights
 
-Place **`osnet_x1_0_soccernet.pth`** in `detetction_test/weights/` (see [backend/weights/README.md](weights/README.md)). The legacy analyzer uses OSNet embeddings to lock the target player by appearance when jersey OCR is ambiguous.
+Place **`osnet_x1_0_soccernet.pth`** in `detection_test/weights/` (see [backend/weights/README.md](weights/README.md)). The legacy analyzer uses OSNet embeddings to lock the target player by appearance when jersey OCR is ambiguous.
 
 ## Next step (frontend)
 

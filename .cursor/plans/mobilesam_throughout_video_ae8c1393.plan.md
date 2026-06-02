@@ -131,7 +131,7 @@ Introduce a small state object (e.g. `SegmentationState` in new [backend/app/pip
 
 ## Frontend overlay
 
-1. Pass `result.rows` (or a `Map<frame, Row>`) into [LegacyVideoPanel](src/components/LegacyVideoPanel.tsx) / [VideoUploadPanel](src/components/VideoUploadPanel.tsx) after analyze.
+1. Pass `result.rows` (or a `Map<frame, Row>`) into [UploadAnalyzePanel](src/components/UploadAnalyzePanel.tsx) / [VideoUploadPanel](src/components/VideoUploadPanel.tsx) after analyze.
 2. Add `src/lib/maskRle.ts`: decode RLE → `ImageData` / `Path2D` for canvas.
 3. Stack **canvas** over `<video>`; on `timeupdate`, pick row by `frame = round(currentTime * fps)`; draw semi-transparent fill.
 4. Toggle “Show player mask” (default on when any `mask_rle` present)—small UX detail, not architecturally load-bearing.
@@ -181,7 +181,7 @@ No CI weights download per your choice.
 | Frontend | [src/types/analysis.ts](src/types/analysis.ts), [src/lib/maskRle.ts](src/lib/maskRle.ts), [VideoUploadPanel](src/components/VideoUploadPanel.tsx) / [Dashboard](src/components/Dashboard.tsx) |
 | Tests | **new** `backend/tests/test_*` |
 
-**Out of scope:** `detetction_test/`, `stv2_sandbox/`, SAM2, row bbox replacement (not selected).
+**Out of scope:** `detection_test/`, `stv2_sandbox/`, SAM2, row bbox replacement (not selected).
 
 ---
 

@@ -63,10 +63,10 @@ export function HeatMapPanel({
 
   useEffect(() => {
     if (heatmap?.image_png_base64) {
-      if (pitchSrc) {
-        URL.revokeObjectURL(pitchSrc);
-        setPitchSrc(null);
-      }
+      setPitchSrc((currentPitchSrc) => {
+        if (currentPitchSrc) URL.revokeObjectURL(currentPitchSrc);
+        return null;
+      });
       return;
     }
 
@@ -171,6 +171,7 @@ export function HeatMapPanel({
           </p>
         )}
         {displaySrc && !isLoading ? (
+          // eslint-disable-next-line @next/next/no-img-element -- Uses runtime blob:/data: URLs from fetch/base64; next/image optimization is not applicable here.
           <img
             key={hasHeatmap ? heatmap?.image_png_base64.slice(0, 32) : "template"}
             src={displaySrc}

@@ -21,7 +21,7 @@ def resolve_sam_weights(explicit: str | None = None) -> Path | None:
         return path if path.is_file() else None
     for candidate in (
         _BACKEND_WEIGHTS / DEFAULT_SAM_CHECKPOINT,
-        _REPO_ROOT / "detetction_test" / "weights" / DEFAULT_SAM_CHECKPOINT,
+        _REPO_ROOT / "detection_test" / "weights" / DEFAULT_SAM_CHECKPOINT,
     ):
         if candidate.is_file():
             return candidate

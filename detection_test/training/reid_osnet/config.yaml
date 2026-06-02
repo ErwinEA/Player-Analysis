@@ -1,6 +1,6 @@
 # OSNet-x1_0 fine-tuning on SoccerNet-ReID player crops
 
-data_root: null  # defaults to SOCCERNET_DATA env or detetction_test/data/soccernet
+data_root: null  # defaults to SOCCERNET_DATA env or detection_test/data/soccernet
 crops_dir: null  # defaults to {data_root}/player_crops
 
 model_name: osnet_x1_0

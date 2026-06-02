@@ -1,4 +1,4 @@
-"""Resolve jersey classifier checkpoint paths (shared with detetction_test/weights/)."""
+"""Resolve jersey classifier checkpoint paths (shared with detection_test/weights/)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_DET_WEIGHTS = _REPO_ROOT / "detetction_test" / "weights"
+_DET_WEIGHTS = _REPO_ROOT / "detection_test" / "weights"
 _BACKEND_WEIGHTS = Path(__file__).resolve().parents[2] / "weights"
 
 JERSEY_NUMBER_DEFAULT = _DET_WEIGHTS / "jersey_number_b0.pt"

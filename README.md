@@ -2,6 +2,10 @@
 
 Dashboard with team sidebar, video upload, pitch calibration, and heat map. Connects to the FastAPI legacy tracking API (`POST /api/analyze`).
 
+## Documentation
+
+Use [`UNIFIED_SYSTEM_GUIDE.md`](UNIFIED_SYSTEM_GUIDE.md) as the primary source of truth for architecture, setup, execution, troubleshooting, and known edge cases.
+
 ## Features
 
 - Click the **video upload** area to open the OS file picker

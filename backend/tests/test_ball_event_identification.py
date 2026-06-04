@@ -116,7 +116,7 @@ def test_run_events_accepts_soft_epoch_without_hard_lock():
                 identification_type="ocr",
             )
         )
-    counts, _samples, events = run_events(
+    counts, _samples, events, drive_contact_m = run_events(
         ball_states,
         target_samples,
         fps=25.0,
@@ -124,6 +124,7 @@ def test_run_events_accepts_soft_epoch_without_hard_lock():
     )
     assert counts.Pass + counts.Shot + counts.Drive >= 0
     assert events is not None
+    assert drive_contact_m >= 0.0
 
 
 def test_soft_epoch_in_multi_without_locked_at():
@@ -157,6 +158,7 @@ def test_soft_epoch_in_multi_without_locked_at():
                 predicted=False,
             )
         )
-    counts, _, best, events = run_events_multi([epoch], fps=25.0)
+    counts, _, best, events, drive_contact_m = run_events_multi([epoch], fps=25.0)
     assert best is epoch or best is None
     assert isinstance(events, list)
+    assert drive_contact_m >= 0.0

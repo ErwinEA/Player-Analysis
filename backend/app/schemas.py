@@ -127,6 +127,7 @@ class AnalyzeResponse(BaseModel):
     provenance: Literal["inferred"] | None = None
     ball_samples: int | None = None
     events_unavailable_reason: str | None = None
+    drive_contact_m: float | None = None
 
 
 class PitchFrameResponse(BaseModel):

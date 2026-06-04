@@ -1,10 +1,57 @@
 .wrapper {
-  flex: 1;
-  min-height: 280px;
   display: flex;
   flex-direction: column;
-  padding: 16px 16px 8px;
+  gap: 16px;
   min-width: 0;
+  padding: 22px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: var(--radius-lg);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cardHeaderTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.cardHeaderIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.cardHeaderIconSvg {
+  width: 18px;
+  height: 18px;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.cardHeaderMeta {
+  font-size: 12.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50%;
 }
 
 .hiddenInput {
@@ -20,36 +67,106 @@
 }
 
 .panel {
-  flex: 1;
   width: 100%;
-  min-height: 240px;
-  padding: 0;
-  border: none;
-  border-radius: 4px;
-  background: #d4d4d4;
+  min-height: 260px;
+  padding: 32px;
+  border: 2px dashed rgba(15, 23, 42, 0.18);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.4);
   cursor: pointer;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  gap: 8px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .panel {
+    transition:
+      border-color 0.18s ease,
+      background 0.18s ease;
+  }
+}
+
+.panel:hover {
+  border-color: var(--accent-soft);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.panel:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 4px;
+}
+
+.panelDragging {
+  border-color: var(--accent-soft);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.dropIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 8px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  color: var(--text-muted);
+}
+
+.dropIconSvg {
+  width: 26px;
+  height: 26px;
+}
+
+.dropTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.dropSubtitle {
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.formatRow {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.formatPill {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-muted);
 }
 
 .previewContainer {
-  flex: 1;
   width: 100%;
   min-height: 240px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
-/* Shrink-wrap to video so the canvas shares the same box as the picture. */
 .videoWrap {
   position: relative;
   width: 100%;
   line-height: 0;
   background: #000;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -71,26 +188,27 @@
 
 .maskToggle {
   align-self: flex-start;
-  font-size: 12px;
-  color: #444;
+  font-size: 12.5px;
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   gap: 6px;
+  cursor: pointer;
 }
 
 .maskHint {
   margin: 0;
   font-size: 12px;
-  color: #6b4e00;
-  line-height: 1.4;
+  color: #92400e;
+  line-height: 1.45;
   max-width: 42rem;
 }
 
 .maskHintLoading {
   margin: 0;
   font-size: 12px;
-  color: #1a4d7a;
-  line-height: 1.4;
+  color: #1e40af;
+  line-height: 1.45;
   max-width: 42rem;
 }
 
@@ -100,38 +218,23 @@
 
 .changeButton {
   align-self: flex-start;
-  padding: 8px 14px;
-  border: none;
-  border-radius: 4px;
-  background: #2b2b2b;
+  padding: 9px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(145deg, #1e293b, #0f172a);
   color: #fff;
   cursor: pointer;
   font-size: 13px;
+  font-weight: 600;
 }
 
 .changeButton:hover {
-  background: #444;
+  background: linear-gradient(145deg, #283548, #131c2e);
 }
 
 .changeButton:focus-visible {
-  outline: 2px solid #1a56db;
+  outline: 2px solid var(--accent-soft);
   outline-offset: 2px;
-}
-
-.panel:hover {
-  background: #ccc;
-}
-
-.panel:focus-visible {
-  outline: 2px solid #333;
-  outline-offset: 2px;
-}
-
-.label {
-  color: #555;
-  font-size: 18px;
-  text-transform: lowercase;
-  pointer-events: none;
 }
 
 .videoFigure {
@@ -142,19 +245,19 @@
 .fileName {
   margin: 8px 0 0;
   font-size: 13px;
-  color: #444;
+  color: var(--text-muted);
   text-align: center;
 }
 
 .maskStatus {
   margin: 0;
   font-size: 12px;
-  color: #444;
+  color: var(--text-faint);
 }
 
 .error {
-  margin: 8px 0 0;
+  margin: 0;
   font-size: 13px;
-  color: #b00020;
+  color: #b91c1c;
   text-align: center;
 }

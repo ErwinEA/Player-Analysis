@@ -16,6 +16,7 @@ import { PlayerMetricsPanel } from "./PlayerMetricsPanel";
 import { GameplayAnalysisPanel } from "./GameplayAnalysisPanel";
 import { PitchCalibrationModal } from "./PitchCalibrationModal";
 import { calibrationKeyFromFilename } from "@/lib/videoFrame";
+import { AnalyzeIcon, LogoIcon } from "./icons";
 
 const INITIAL_DETAILS: PlayerDetails = {
   name: "",
@@ -62,12 +63,17 @@ function metricsFromEvents(
   const ec = result.event_counts;
   // Backend sets event_counts and provenance=inferred together; match gameplay summary gating.
   if (!ec || result.provenance !== "inferred") return base;
+  const driveContactM =
+    result.drive_contact_m != null && Number.isFinite(result.drive_contact_m)
+      ? result.drive_contact_m
+      : null;
   return {
     ...base,
     goals: ec.Goal,
     shots: ec.Shot,
     passes: ec.Pass,
     drives: ec.Drive,
+    driveContactM,
   };
 }
 
@@ -234,7 +240,11 @@ export function Dashboard() {
         const weakNote =
           weakCount > 0 ? ` (${weakCount} pre-lock/uncertain).` : "";
         setGameplayAnalysis({
-          summary: `Inferred: ${ec.Pass} passes, ${ec.Shot} shots, ${ec.Goal} goals, ${ec.Drive} drives.${weakNote}`,
+          summary: `Inferred: ${ec.Pass} passes, ${ec.Shot} shots, ${ec.Goal} goals, ${ec.Drive} drives${
+            response.drive_contact_m != null && response.drive_contact_m > 0
+              ? ` (${response.drive_contact_m.toFixed(0)} m ball contact while driving)`
+              : ""
+          }.${weakNote}`,
         });
       } else {
         setGameplayAnalysis(null);
@@ -277,7 +287,15 @@ export function Dashboard() {
       </a>
       <header className={styles.headerShell}>
         <div className={styles.headerBar}>
-          <h1 className={styles.headerTitle}>Player Analysis</h1>
+          <div className={styles.brand}>
+            <span className={styles.brandMark} aria-hidden="true">
+              <LogoIcon className={styles.brandMarkIcon} />
+            </span>
+            <div className={styles.brandText}>
+              <h1 className={styles.headerTitle}>Player Analysis</h1>
+              <span className={styles.brandSubtitle}>Pro Scout Intelligence</span>
+            </div>
+          </div>
           <div className={styles.headerControls}>
             <div className={styles.apiStatusGroup}>
               <div
@@ -308,6 +326,7 @@ export function Dashboard() {
               }
               aria-busy={isLoading}
             >
+              <AnalyzeIcon className={styles.analyzeButtonIcon} />
               {isLoading ? "Analyzing…" : "Analyze"}
             </button>
           </div>
@@ -384,6 +403,26 @@ export function Dashboard() {
           />
         </main>
       </div>
+      <footer className={styles.footer}>
+        <div className={styles.footerBrand}>
+          <span className={styles.footerMark} aria-hidden="true">
+            N
+          </span>
+          <span className={styles.footerBrandText}>Neural Sports Analytics</span>
+        </div>
+        <nav className={styles.footerLinks} aria-label="Footer">
+          <a className={styles.footerLink} href="#">
+            Privacy
+          </a>
+          <a className={styles.footerLink} href="#">
+            Terms
+          </a>
+          <a className={styles.footerLink} href="#">
+            Documentation
+          </a>
+          <span className={styles.footerVersion}>v2.4.1</span>
+        </nav>
+      </footer>
       <PitchCalibrationModal
         open={calibrationOpen}
         calibrationName={videoCalibrationKey ?? "upload"}

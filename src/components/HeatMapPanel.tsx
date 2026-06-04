@@ -126,9 +126,19 @@ export function HeatMapPanel({
       aria-labelledby="heat-map-heading"
       aria-busy={isLoading}
     >
-      <h2 id="heat-map-heading" className={styles.heading}>
-        Heat map
-      </h2>
+      <header className={styles.header}>
+        <div className={styles.headerText}>
+          <h2 id="heat-map-heading" className={styles.heading}>
+            Position Heat Map
+          </h2>
+          <p className={styles.subtitle}>{statusText}</p>
+        </div>
+        <span className={styles.dots} aria-hidden="true">
+          <span className={`${styles.dot} ${styles.dotRed}`} />
+          <span className={`${styles.dot} ${styles.dotAmber}`} />
+          <span className={`${styles.dot} ${styles.dotGreen}`} />
+        </span>
+      </header>
 
       {(errorMessage || pitchError) && (
         <p className={styles.error} role="alert">
@@ -171,14 +181,25 @@ export function HeatMapPanel({
           </p>
         )}
         {displaySrc && !isLoading ? (
-          // eslint-disable-next-line @next/next/no-img-element -- Uses runtime blob:/data: URLs from fetch/base64; next/image optimization is not applicable here.
-          <img
-            key={hasHeatmap ? heatmap?.image_png_base64.slice(0, 32) : "template"}
-            src={displaySrc}
-            alt={heatmapAlt}
-            aria-describedby={heatmapStatusId}
-            className={styles.pitchImage}
-          />
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element -- Uses runtime blob:/data: URLs from fetch/base64; next/image optimization is not applicable here. */}
+            <img
+              key={
+                hasHeatmap ? heatmap?.image_png_base64.slice(0, 32) : "template"
+              }
+              src={displaySrc}
+              alt={heatmapAlt}
+              aria-describedby={heatmapStatusId}
+              className={styles.pitchImage}
+            />
+            {hasHeatmap && (
+              <span className={styles.legend} aria-hidden="true">
+                <span className={styles.legendLabel}>Low</span>
+                <span className={styles.legendBar} />
+                <span className={styles.legendLabel}>High</span>
+              </span>
+            )}
+          </>
         ) : !isLoading ? (
           <p className={styles.label} aria-live="polite" aria-atomic="true">
             {emptyLabel}

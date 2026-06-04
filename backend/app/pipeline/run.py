@@ -49,7 +49,7 @@ from backend.app.schemas import (
 
 
 def _ocr_every() -> int:
-    return max(1, int(os.environ.get("OCR_EVERY", "5")))
+    return max(1, int(os.environ.get("OCR_EVERY", "3")))
 
 
 def _track_min_age() -> int:
@@ -676,6 +676,8 @@ def run_pipeline(
                             seg_state.acquire_lock(new_lock.track_id)
                             if track_id == new_lock.track_id:
                                 seg_state.record_visible_frame(frame_idx)
+                        elif matcher.lock is not None:
+                            matcher.maybe_upgrade_lock(track_id)
 
                 player = (
                     details.jerseyNumber
@@ -744,7 +746,7 @@ def run_pipeline(
                     # this frame's detections; still count the lock frame for warmup.
                     seg_state.record_visible_frame(frame_idx)
                 elif not seg_state.sam_active:
-                    seg_state.reset_visible_if_missing()
+                    seg_state.record_miss_frame()
 
             if lock is not None and seg_state.sam_active:
                 resolved = resolve_target_bbox(
@@ -811,6 +813,7 @@ def run_pipeline(
                         matcher.observe_name(seg_tid, name, name_conf)
                         if num_conf > 0:
                             last_ocr_conf[seg_tid] = num_conf
+                        matcher.maybe_upgrade_lock(seg_tid)
                         from backend.app.pipeline.segmentation import (
                             seg_jersey_ocr_min_conf,
                         )
@@ -857,6 +860,11 @@ def run_pipeline(
                         this_frame_target_visible = True
                         this_frame_seg_source = seg_result.segment_source
                 elif last_seg_bbox is not None and details.jerseyNumber > 0:
+                    # Target was not positively located this frame (no jersey/kit/ReID
+                    # match). Continue the trajectory from the last good bbox, but DO NOT
+                    # segment: prompting MobileSAM with a stale box segments whatever now
+                    # occupies that spot (a shadow, grass, another person) and paints a
+                    # ghost overlay even though the player has left the frame.
                     _append_gap_row(
                         rows,
                         ts=ts,
@@ -1071,6 +1079,7 @@ def run_pipeline(
         inferred_events: list[InferredBallEvent] | None = None
         ball_samples: int | None = None
         events_unavailable_reason: str | None = None
+        drive_contact_m: float | None = None
         provenance: str | None = None
         best_epoch = None
 
@@ -1093,7 +1102,7 @@ def run_pipeline(
                 ):
                     events_unavailable_reason = "no_lock"
                 else:
-                    event_counts, ball_samples, best_epoch, detected = (
+                    event_counts, ball_samples, best_epoch, detected, drive_contact_m = (
                         run_events_multi(epochs, fps=fps)
                     )
                     inferred_events = [
@@ -1226,6 +1235,7 @@ def run_pipeline(
             provenance=provenance,  # type: ignore[arg-type]
             ball_samples=ball_samples,
             events_unavailable_reason=events_unavailable_reason,
+            drive_contact_m=drive_contact_m,
         )
     finally:
         cap.release()

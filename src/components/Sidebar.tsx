@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import styles from "./Sidebar.module.css";
+import { InfoIcon, UserIcon } from "./icons";
 
 export type HexColor = `#${string}`;
 
@@ -19,6 +20,17 @@ type SidebarProps = {
 };
 
 const JERSEY_HINT_ID = "player-jersey-hint";
+
+const KIT_PALETTE: { hex: HexColor; name: string }[] = [
+  { hex: "#dc2626", name: "Red" },
+  { hex: "#2563eb", name: "Blue" },
+  { hex: "#059669", name: "Green" },
+  { hex: "#eab308", name: "Gold" },
+  { hex: "#1f2937", name: "Black" },
+  { hex: "#ffffff", name: "White" },
+  { hex: "#9333ea", name: "Purple" },
+  { hex: "#ea580c", name: "Orange" },
+];
 
 export function Sidebar({ details, onChange }: SidebarProps) {
   type StringField = "name" | "teamName";
@@ -43,119 +55,150 @@ export function Sidebar({ details, onChange }: SidebarProps) {
     [details, onChange],
   );
 
-  const jerseyInvalid =
-    details.jerseyNumber <= 0 || details.jerseyNumber > 99;
+  const jerseyInvalid = details.jerseyNumber <= 0 || details.jerseyNumber > 99;
 
   return (
-    <aside className={styles.sidebar} aria-label="Player details">
-      <div className={styles.card}>
-        <label className={styles.fieldLabel} htmlFor="player-jersey">
-          Jersey number
-          <span className={styles.requiredMark} aria-hidden="true">
-            {" "}
-            (required)
+    <aside className={styles.sidebar} aria-label="Player configuration">
+      <section className={styles.card}>
+        <header className={styles.cardHeader}>
+          <span className={styles.cardHeaderIcon} aria-hidden="true">
+            <UserIcon className={styles.cardHeaderIconSvg} />
           </span>
-        </label>
-        <input
-          id="player-jersey"
-          className={styles.field}
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          value={details.jerseyNumber === 0 ? "" : details.jerseyNumber}
-          onChange={handleJerseyNumberChange}
-          placeholder="jersey no."
-          aria-required="true"
-          aria-invalid={jerseyInvalid}
-          aria-describedby={JERSEY_HINT_ID}
-        />
-        <p id={JERSEY_HINT_ID} className={styles.fieldHint}>
-          Used to find the player in the video. Name and kit colors are optional
-          helpers when the number is hard to read.
-        </p>
+          <h2 className={styles.cardTitle}>Player Configuration</h2>
+        </header>
 
-        <label className={styles.fieldLabel} htmlFor="player-name">
-          Name <span className={styles.optionalMark}>(optional)</span>
-        </label>
-        <input
-          id="player-name"
-          className={styles.field}
-          type="text"
-          value={details.name}
-          onChange={(e) => update("name", e.target.value)}
-          placeholder="name"
-        />
+        <div className={styles.field}>
+          <label className={styles.fieldLabel} htmlFor="player-jersey">
+            Jersey number
+            <span className={styles.requiredMark} aria-hidden="true">
+              {" "}
+              *
+            </span>
+          </label>
+          <div className={styles.inputWrap}>
+            <input
+              id="player-jersey"
+              className={styles.input}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={details.jerseyNumber === 0 ? "" : details.jerseyNumber}
+              onChange={handleJerseyNumberChange}
+              placeholder="e.g. 10"
+              aria-required="true"
+              aria-invalid={jerseyInvalid}
+              aria-describedby={JERSEY_HINT_ID}
+            />
+            <span className={styles.inputSuffix} aria-hidden="true">
+              #
+            </span>
+          </div>
+          <p id={JERSEY_HINT_ID} className={styles.fieldHint}>
+            Used to identify the player in video. Name and kit colors are
+            optional helpers when the number is hard to read.
+          </p>
+        </div>
 
-        <p className={styles.sectionHint}>Kit colors (optional)</p>
-        <ColorField
-          label="primary jersey color"
-          value={details.primaryJerseyColor}
-          onChange={(value) =>
-            onChange({ ...details, primaryJerseyColor: value })
-          }
-        />
-        <ColorField
-          label="secondary jersey color"
-          value={details.secondaryJerseyColor}
-          onChange={(value) =>
-            onChange({ ...details, secondaryJerseyColor: value })
-          }
-        />
+        <div className={styles.field}>
+          <label className={styles.fieldLabel} htmlFor="player-name">
+            Player name <span className={styles.optionalMark}>(optional)</span>
+          </label>
+          <div className={styles.inputWrap}>
+            <input
+              id="player-name"
+              className={styles.input}
+              type="text"
+              value={details.name}
+              onChange={(e) => update("name", e.target.value)}
+              placeholder="e.g. Marcus Rashford"
+            />
+          </div>
+        </div>
 
-        <label className={styles.fieldLabel} htmlFor="player-team">
-          Team name <span className={styles.optionalMark}>(optional)</span>
-        </label>
-        <input
-          id="player-team"
-          className={styles.field}
-          type="text"
-          value={details.teamName}
-          onChange={(e) => update("teamName", e.target.value)}
-          placeholder="team name"
-        />
-      </div>
+        <div className={styles.field}>
+          <p className={styles.fieldLabel}>Kit colors</p>
+          <ColorPalette
+            label="Primary jersey color"
+            value={details.primaryJerseyColor}
+            onChange={(value) =>
+              onChange({ ...details, primaryJerseyColor: value })
+            }
+          />
+          <ColorPalette
+            label="Secondary / trim color"
+            value={details.secondaryJerseyColor}
+            onChange={(value) =>
+              onChange({ ...details, secondaryJerseyColor: value })
+            }
+          />
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.fieldLabel} htmlFor="player-team">
+            Team name <span className={styles.optionalMark}>(optional)</span>
+          </label>
+          <div className={styles.inputWrap}>
+            <input
+              id="player-team"
+              className={styles.input}
+              type="text"
+              value={details.teamName}
+              onChange={(e) => update("teamName", e.target.value)}
+              placeholder="e.g. Manchester United"
+            />
+          </div>
+        </div>
+      </section>
+
+      <aside className={styles.tip} aria-label="Pro tip">
+        <span className={styles.tipIcon} aria-hidden="true">
+          <InfoIcon className={styles.tipIconSvg} />
+        </span>
+        <div className={styles.tipBody}>
+          <p className={styles.tipTitle}>Pro Tip</p>
+          <p className={styles.tipText}>
+            For best results, use video with clear jersey numbers and consistent
+            lighting. 1080p or higher recommended.
+          </p>
+        </div>
+      </aside>
     </aside>
   );
 }
 
-type ColorFieldProps = {
+type ColorPaletteProps = {
   label: string;
   value: HexColor | "";
   onChange: (value: HexColor | "") => void;
 };
 
-function ColorField({ label, value, onChange }: ColorFieldProps) {
-  const hasColor = value !== "";
-  const swatchStyle: React.CSSProperties = hasColor
-    ? { backgroundColor: value }
-    : { backgroundColor: "#e5e5e5" };
-  const pickerValue = hasColor ? value : "#808080";
-
+function ColorPalette({ label, value, onChange }: ColorPaletteProps) {
+  const groupLabelId = `${label.replace(/\W+/g, "-")}-label`;
   return (
-    <div className={styles.colorField}>
-      <span className={styles.colorLabel} id={`${label}-label`}>
+    <div className={styles.colorBlock}>
+      <span className={styles.colorLabel} id={groupLabelId}>
         {label}
       </span>
-      <span className={styles.colorHex}>
-        {hasColor ? value.toLowerCase() : "not set"}
-      </span>
-      <span className={styles.colorSwatch} style={swatchStyle} aria-hidden />
-      <input
-        type="color"
-        className={styles.hiddenColorInput}
-        value={pickerValue}
-        onChange={(e) => onChange(e.target.value as HexColor)}
-        aria-labelledby={`${label}-label`}
-      />
-      {hasColor && (
-        <button
-          type="button"
-          className={styles.clearColorButton}
-          onClick={() => onChange("")}
-        >
-          Clear
-        </button>
-      )}
+      <div
+        className={styles.swatchRow}
+        role="group"
+        aria-labelledby={groupLabelId}
+      >
+        {KIT_PALETTE.map(({ hex, name }) => {
+          const selected = value.toLowerCase() === hex.toLowerCase();
+          return (
+            <button
+              key={hex}
+              type="button"
+              className={`${styles.swatch} ${selected ? styles.swatchSelected : ""}`}
+              style={{ backgroundColor: hex }}
+              aria-pressed={selected}
+              aria-label={`${name}${selected ? " (selected)" : ""}`}
+              onClick={() => onChange(selected ? "" : hex)}
+            />
+          );
+        })}
+      </div>
     </div>
   );
 }

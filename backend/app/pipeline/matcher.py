@@ -30,7 +30,7 @@ def _number_min_conf() -> float:
 
 def _number_lock_votes() -> float:
     """Cumulative number-OCR confidence at which we lock by number alone."""
-    return float(os.environ.get("NUMBER_LOCK_VOTES", "1.5"))
+    return float(os.environ.get("NUMBER_LOCK_VOTES", "1.0"))
 
 
 def _reid_lock_threshold() -> float:
@@ -38,7 +38,7 @@ def _reid_lock_threshold() -> float:
 
 
 def _reid_min_samples() -> int:
-    return max(1, int(os.environ.get("REID_MIN_SAMPLES", "3")))
+    return max(1, int(os.environ.get("REID_MIN_SAMPLES", "2")))
 
 
 def _reid_prototype_min_conf() -> float:
@@ -253,27 +253,52 @@ class TrackIdentityMatcher:
             confidence=round(best_avg, 3),
         )
 
-    def try_acquire_lock(self) -> TargetLock | None:
-        """Try Stage 1 (number+name) then Stage 2 (number only). Stage 3 (color)
-        is only used at the end if nothing stronger matched."""
-        if self.lock is not None:
-            return self.lock
+    def _strongest_available_lock(self) -> TargetLock | None:
+        """Best lock by evidence tier (ReID before weak color)."""
         lock = self._try_lock_number_name()
         if lock is None:
             lock = self._try_lock_number()
         if lock is None:
-            lock = self._try_lock_color()
-        if lock is None:
             lock = self._try_lock_reid()
+        if lock is None:
+            lock = self._try_lock_color()
+        return lock
+
+    def try_acquire_lock(self) -> TargetLock | None:
+        """Acquire permanent lock: number+name → number → ReID → color."""
+        if self.lock is not None:
+            return self.lock
+        lock = self._strongest_available_lock()
         if lock is not None:
             self.lock = lock
         return self.lock
 
+    def maybe_upgrade_lock(self, track_id: int) -> TargetLock | None:
+        """Promote a weak color lock when stronger evidence arrives on the same track."""
+        if self.lock is None:
+            return self.try_acquire_lock()
+        if self.lock.method not in ("color",):
+            return self.lock
+        if self.lock.track_id != track_id:
+            return self.lock
+        for factory in (
+            self._try_lock_number_name,
+            self._try_lock_number,
+            self._try_lock_reid,
+        ):
+            candidate = factory()
+            if candidate is not None and candidate.track_id == track_id:
+                self.lock = candidate
+                return self.lock
+        return self.lock
+
     def finalize(self) -> TargetLock | None:
-        """Called once at end of video. Uses color fallback only if no stronger lock."""
+        """End-of-video lock: ReID before color if still unlocked."""
         if self.lock is not None:
             return self.lock
-        lock = self._try_lock_color()
+        lock = self._try_lock_reid()
+        if lock is None:
+            lock = self._try_lock_color()
         if lock is not None:
             self.lock = lock
         return self.lock

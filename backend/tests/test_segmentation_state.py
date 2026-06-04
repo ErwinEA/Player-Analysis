@@ -19,14 +19,27 @@ def test_sam_active_after_warmup(monkeypatch):
 
 def test_consecutive_resets_when_missing_before_sam(monkeypatch):
     monkeypatch.setenv("SAM_WARMUP_FRAMES", "3")
+    monkeypatch.setenv("SAM_WARMUP_MISS_FRAMES", "0")
     state = SegmentationState()
     state.acquire_lock(1)
     state.record_visible_frame(1)
     state.record_visible_frame(2)
-    state.reset_visible_if_missing()
+    state.record_miss_frame()
     state.record_visible_frame(3)
     assert state.visible_count == 1
     assert not state.sam_active
+
+
+def test_miss_grace_preserves_warmup_progress(monkeypatch):
+    monkeypatch.setenv("SAM_WARMUP_FRAMES", "3")
+    monkeypatch.setenv("SAM_WARMUP_MISS_FRAMES", "15")
+    state = SegmentationState()
+    state.acquire_lock(1)
+    state.record_visible_frame(1)
+    state.record_visible_frame(2)
+    state.record_miss_frame()
+    state.record_visible_frame(3)
+    assert state.sam_active
 
 
 def test_warmup_default_is_one(monkeypatch):

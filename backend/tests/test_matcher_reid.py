@@ -22,3 +22,31 @@ def test_reid_lock_after_prototype():
     assert lock is not None
     assert lock.track_id == 7
     assert lock.method == "reid"
+
+
+def test_acquire_lock_prefers_reid_over_color():
+    matcher = TrackIdentityMatcher(target_jersey=9, target_name="")
+    proto = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    matcher.reid_prototype = proto
+    matcher.has_number_match[7] = True
+    matcher.observe_reid(7, proto)
+    matcher.observe_reid(7, proto)
+    for _ in range(5):
+        matcher.observe_color(3, 0.9)
+    lock = matcher.try_acquire_lock()
+    assert lock is not None
+    assert lock.method == "reid"
+    assert lock.track_id == 7
+
+
+def test_maybe_upgrade_color_lock_to_number():
+    from backend.app.pipeline.matcher import TargetLock
+
+    matcher = TrackIdentityMatcher(target_jersey=9, target_name="")
+    matcher.lock = TargetLock(track_id=3, jersey=9, method="color", confidence=0.2)
+    matcher.number_votes[3] = 1.5
+    matcher.has_number_match[3] = True
+    upgraded = matcher.maybe_upgrade_lock(3)
+    assert upgraded is not None
+    assert upgraded.method == "number"
+    assert upgraded.track_id == 3

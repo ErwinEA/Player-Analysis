@@ -63,7 +63,7 @@ def _pass_epoch(start_frame: int, *, on_pitch: bool) -> LockEpoch:
 
 def test_aggregates_passes_across_good_epochs():
     epochs = [_pass_epoch(0, on_pitch=True), _pass_epoch(100, on_pitch=True)]
-    counts, _samples, best, _events = run_events_multi(epochs, fps=30.0)
+    counts, _samples, best, _events, _drive_m = run_events_multi(epochs, fps=30.0)
     assert counts.Pass == 2
     assert best is not None
 
@@ -71,7 +71,7 @@ def test_aggregates_passes_across_good_epochs():
 def test_off_pitch_epoch_contributes_nothing():
     good = _pass_epoch(0, on_pitch=True)
     bad = _pass_epoch(100, on_pitch=False)
-    counts, _samples, best, _events = run_events_multi([good, bad], fps=30.0)
+    counts, _samples, best, _events, _drive_m = run_events_multi([good, bad], fps=30.0)
     assert counts.Pass == 1
     assert best is good
 
@@ -86,7 +86,7 @@ def test_no_lock_epoch_skipped():
         ball_states=[],
         target_samples=[],
     )
-    counts, _samples, best, _events = run_events_multi([good, no_lock], fps=30.0)
+    counts, _samples, best, _events, _drive_m = run_events_multi([good, no_lock], fps=30.0)
     assert counts.Pass == 1
     assert best is good
 
@@ -96,5 +96,5 @@ def test_best_epoch_prefers_more_visible_frames():
     short.target_samples = short.target_samples[:10]
     short.ball_states = short.ball_states[:10]
     long = _pass_epoch(100, on_pitch=True)
-    _counts, _samples, best, _events = run_events_multi([short, long], fps=30.0)
+    _counts, _samples, best, _events, _drive_m = run_events_multi([short, long], fps=30.0)
     assert best is long

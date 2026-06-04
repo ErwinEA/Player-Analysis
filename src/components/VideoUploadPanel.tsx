@@ -14,6 +14,9 @@ import {
 import type { MobileSamHealth } from "@/lib/api";
 import type { Row } from "@/types/analysis";
 import styles from "./VideoUploadPanel.module.css";
+import { UploadCloudIcon, VideoIcon } from "./icons";
+
+const VIDEO_FORMATS = ["MP4", "MOV"];
 
 const UPLOAD_HINT_ID = "video-upload-format-hint";
 
@@ -47,6 +50,7 @@ export function VideoUploadPanel({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showMask, setShowMask] = useState(true);
   const [maskStatus, setMaskStatus] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
 
   const maskRows = useMemo(
     () => (trackingRows ?? []).filter((r) => r.mask_rle),
@@ -182,11 +186,8 @@ export function VideoUploadPanel({
     inputRef.current?.click();
   }, []);
 
-  const handleFileChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const selected = event.target.files?.[0];
-      event.target.value = "";
-
+  const acceptFile = useCallback(
+    (selected: File | null | undefined) => {
       if (!selected) return;
 
       if (!isValidVideoFile(selected)) {
@@ -201,6 +202,34 @@ export function VideoUploadPanel({
     [onFileChange],
   );
 
+  const handleFileChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const selected = event.target.files?.[0];
+      event.target.value = "";
+      acceptFile(selected);
+    },
+    [acceptFile],
+  );
+
+  const handleDrop = useCallback(
+    (event: React.DragEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      setIsDragging(false);
+      acceptFile(event.dataTransfer.files?.[0]);
+    },
+    [acceptFile],
+  );
+
+  const handleDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    setIsDragging(false);
+  }, []);
+
   const describedBy = [
     file ? "video-filename" : null,
     error ? "video-error" : null,
@@ -213,9 +242,19 @@ export function VideoUploadPanel({
 
   return (
     <section className={styles.wrapper} aria-labelledby="video-upload-heading">
-      <h2 id="video-upload-heading" className="srOnly">
-        Video upload
-      </h2>
+      <header className={styles.cardHeader}>
+        <span className={styles.cardHeaderTitle}>
+          <span className={styles.cardHeaderIcon} aria-hidden="true">
+            <VideoIcon className={styles.cardHeaderIconSvg} />
+          </span>
+          <h2 id="video-upload-heading" className={styles.cardTitle}>
+            Video Upload
+          </h2>
+        </span>
+        <span className={styles.cardHeaderMeta}>
+          {file ? file.name : "No video selected"}
+        </span>
+      </header>
       <input
         id={fileInputId}
         ref={inputRef}
@@ -300,11 +339,28 @@ export function VideoUploadPanel({
       ) : (
         <button
           type="button"
-          className={styles.panel}
+          className={`${styles.panel} ${isDragging ? styles.panelDragging : ""}`}
           onClick={openFilePicker}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragEnter={handleDragOver}
+          onDragLeave={handleDragLeave}
           aria-describedby={describedBy || undefined}
         >
-          <span className={styles.label}>video upload</span>
+          <span className={styles.dropIcon} aria-hidden="true">
+            <UploadCloudIcon className={styles.dropIconSvg} />
+          </span>
+          <span className={styles.dropTitle}>Drop your match video here</span>
+          <span className={styles.dropSubtitle}>
+            or click to browse from your device
+          </span>
+          <span className={styles.formatRow} aria-hidden="true">
+            {VIDEO_FORMATS.map((fmt) => (
+              <span key={fmt} className={styles.formatPill}>
+                {fmt}
+              </span>
+            ))}
+          </span>
           <span id={UPLOAD_HINT_ID} className="srOnly">
             MP4 or MOV only
           </span>

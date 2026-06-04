@@ -75,3 +75,12 @@ detection_test/.vendor/
 
 # Cursor (ignore everything)
 .cursor/
+
+# Playwright
+/.playwright-mcp/
+/.playwright-browsers/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

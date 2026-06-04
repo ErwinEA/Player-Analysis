@@ -96,4 +96,5 @@ export type AnalyzeResponse = {
   provenance?: "inferred" | null;
   ball_samples?: number | null;
   events_unavailable_reason?: string | null;
+  drive_contact_m?: number | null;
 };

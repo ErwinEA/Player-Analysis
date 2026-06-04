@@ -4,6 +4,7 @@ export type PlayerMetrics = {
   passes: number | null;
   drives: number | null;
   distanceCoveredKm: number | null;
+  driveContactM: number | null;
 };
 
 export const EMPTY_METRICS: PlayerMetrics = {
@@ -12,6 +13,7 @@ export const EMPTY_METRICS: PlayerMetrics = {
   passes: null,
   drives: null,
   distanceCoveredKm: null,
+  driveContactM: null,
 };
 
 export type GameplayAnalysis = {

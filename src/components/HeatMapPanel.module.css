@@ -1,38 +1,86 @@
 .panel {
   flex: 1;
   min-width: 0;
-  min-height: 220px;
-  padding: 16px;
-  background: #d4d4d4;
-  border-radius: 4px;
+  min-height: 280px;
+  padding: 22px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
 }
 
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.headerText {
+  min-width: 0;
+}
+
 .heading {
-  margin: 0 0 12px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-  text-transform: lowercase;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-faint);
+  line-height: 1.4;
+}
+
+.dots {
+  display: inline-flex;
+  gap: 6px;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.dotRed {
+  background: #f87171;
+}
+
+.dotAmber {
+  background: #fbbf24;
+}
+
+.dotGreen {
+  background: #34d399;
 }
 
 .meta {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   font-size: 12px;
-  color: #555;
+  color: var(--text-muted);
 }
 
 .warn {
-  color: #78350f;
+  color: #b45309;
   font-weight: 600;
 }
 
 .canvas {
   flex: 1;
-  min-height: 160px;
-  background: #c8c8c8;
-  border-radius: 4px;
+  min-height: 200px;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -50,8 +98,10 @@
   padding: 12px;
   text-align: center;
   font-size: 14px;
-  color: #333;
-  background: rgba(200, 200, 200, 0.85);
+  color: var(--text-body);
+  background: rgba(248, 250, 252, 0.78);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   z-index: 1;
 }
 
@@ -62,16 +112,43 @@
   display: block;
 }
 
+.legend {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.legendLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.legendBar {
+  width: 70px;
+  height: 7px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #1d4ed8, #22c55e, #eab308, #ef4444);
+}
+
 .label {
-  color: #4a4a4a;
-  font-size: 16px;
-  text-transform: lowercase;
+  color: var(--text-muted);
+  font-size: 15px;
   margin: 0;
   text-align: center;
+  padding: 16px;
 }
 
 .error {
   margin: 0 0 8px;
   font-size: 13px;
-  color: #8b2020;
+  color: #b91c1c;
 }

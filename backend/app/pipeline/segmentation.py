@@ -47,6 +47,11 @@ def sam_warmup_frames() -> int:
     return max(1, int(os.environ.get("SAM_WARMUP_FRAMES", "1")))
 
 
+def sam_warmup_miss_frames() -> int:
+    """Consecutive invisible frames tolerated before SAM warmup counter resets."""
+    return max(0, int(os.environ.get("SAM_WARMUP_MISS_FRAMES", "15")))
+
+
 def reid_fallback_thresh() -> float:
     return float(os.environ.get("REID_FALLBACK_THRESH", "0.65"))
 
@@ -278,6 +283,7 @@ class SegmentationState:
 
     lock_track_id: int | None = None
     visible_count: int = 0
+    consecutive_misses: int = 0
     sam_active: bool = False
     segmentation_started_at_frame: int | None = None
     warned_unavailable: bool = False
@@ -290,11 +296,13 @@ class SegmentationState:
         if self.lock_track_id != track_id:
             self.lock_track_id = track_id
             self.visible_count = 0
+            self.consecutive_misses = 0
             self.sam_active = False
             self.segmentation_started_at_frame = None
 
     def record_visible_frame(self, frame_idx: int) -> None:
         """Count a frame where the locked track is visible; activates SAM at threshold."""
+        self.consecutive_misses = 0
         if self.sam_active:
             return
         self.visible_count += 1
@@ -302,9 +310,18 @@ class SegmentationState:
             self.sam_active = True
             self.segmentation_started_at_frame = frame_idx
 
-    def reset_visible_if_missing(self) -> None:
-        if not self.sam_active:
+    def record_miss_frame(self) -> None:
+        """Count a frame where the locked target is not visible (pre-SAM warmup only)."""
+        if self.sam_active:
+            return
+        self.consecutive_misses += 1
+        if self.consecutive_misses > sam_warmup_miss_frames():
             self.visible_count = 0
+            self.consecutive_misses = 0
+
+    def reset_visible_if_missing(self) -> None:
+        """Deprecated alias for record_miss_frame."""
+        self.record_miss_frame()
 
 
 class MobileSamSegmenter:

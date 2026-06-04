@@ -1,37 +1,58 @@
 .panel {
-  margin: 0 16px 16px;
-  padding: 16px 20px;
-  min-height: 160px;
-  background: #d4d4d4;
-  border-radius: 4px;
+  padding: 22px;
+  min-height: 240px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
+.headerText {
+  min-width: 0;
+}
+
 .heading {
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-  text-transform: lowercase;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-faint);
 }
 
 .badge {
-  font-size: 11px;
-  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 13px;
   border-radius: 999px;
-  background: #2b2b2b;
-  color: #e8e8e8;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  background: linear-gradient(145deg, #1e293b, #0f172a);
+  color: #f8fafc;
+  flex-shrink: 0;
+}
+
+.badgeIcon {
+  width: 14px;
+  height: 14px;
+  color: #fbbf24;
 }
 
 .content {
@@ -42,18 +63,48 @@
   margin: 0;
   font-size: 14px;
   line-height: 1.6;
-  color: #333;
+  color: var(--text-body);
+}
+
+.emptyState {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+  padding: 24px 16px;
+}
+
+.emptyIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  color: var(--text-faint);
+}
+
+.emptyIconSvg {
+  width: 24px;
+  height: 24px;
 }
 
 .placeholder {
   margin: 0;
   font-size: 14px;
   line-height: 1.5;
-  color: #555;
+  color: var(--text-muted);
+  max-width: 32rem;
 }
 
 .error {
   margin: 0;
   font-size: 14px;
-  color: #8b2020;
+  color: #b91c1c;
 }

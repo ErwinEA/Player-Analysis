@@ -86,9 +86,13 @@ export function drawMaskOnCanvasScaled(
   ctx.drawImage(off as CanvasImageSource, 0, 0, destW, destH);
 }
 
-const PLAYBACK_TIME_TOLERANCE_S = 0.05;
+const FALLBACK_TOLERANCE_S = 0.05;
 
-/** Exact frame match on pipeline index, else nearest row by timestamp `t`. */
+/** Exact frame match on pipeline index, else nearest row by timestamp `t`.
+ *
+ * The timestamp fallback only covers fps rounding between the video and the
+ * pipeline, so it is capped at half a frame. A looser window would paint a
+ * neighboring frame's mask onto frames where the player is no longer present. */
 export function rowAtPlaybackTime(
   currentTime: number,
   videoFps: number,
@@ -99,8 +103,10 @@ export function rowAtPlaybackTime(
   const byFrame = maskRows.find((r) => r.frame === frame);
   if (byFrame?.mask_rle) return byFrame;
 
+  const tolerance =
+    videoFps > 0 ? 0.5 / videoFps : FALLBACK_TOLERANCE_S;
   let best: Row | undefined;
-  let bestDt = PLAYBACK_TIME_TOLERANCE_S + 1;
+  let bestDt = tolerance + 1;
   for (const row of maskRows) {
     if (!row.mask_rle) continue;
     const dt = Math.abs(row.t - currentTime);
@@ -109,7 +115,7 @@ export function rowAtPlaybackTime(
       best = row;
     }
   }
-  return bestDt <= PLAYBACK_TIME_TOLERANCE_S ? best : undefined;
+  return bestDt <= tolerance ? best : undefined;
 }
 
 function parseRgba(css: string): [number, number, number, number] {

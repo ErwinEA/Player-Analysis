@@ -13,6 +13,7 @@ from backend.app.pipeline.ball_events.ball_detector import BallState
 from backend.app.pipeline.ball_events.events import (
     DetectedEvent,
     aggregate_counts,
+    compute_drive_contact_m,
     detect_events,
     infer_attack_direction_label,
 )
@@ -76,20 +77,20 @@ def run_events(
     *,
     fps: float,
     locked_at_frame: int | None,
-) -> tuple[PlayerEventCounts, int, list[DetectedEvent]]:
+) -> tuple[PlayerEventCounts, int, list[DetectedEvent], float]:
     """
-    Returns (event_counts, ball_samples, detected_events) where ball_samples = frames
-    with a raw detection.
+    Returns (event_counts, ball_samples, detected_events, drive_contact_m) where
+    ball_samples = frames with a raw detection.
     """
     empty = PlayerEventCounts()
     ball_samples = _count_detections(ball_states)
     has_soft_id = any(s.identification_type for s in target_samples)
     if locked_at_frame is None and not has_soft_id:
-        return empty, ball_samples, []
+        return empty, ball_samples, [], 0.0
 
     timeline = build_timeline(ball_states, target_samples)
     if not timeline:
-        return empty, 0, []
+        return empty, 0, [], 0.0
 
     pass_min = _env_float("PASS_MIN_SPEED_M_S", 4.0)
     shot_min = _env_float("SHOT_MIN_SPEED_M_S", 8.0)
@@ -165,6 +166,11 @@ def run_events(
         emitted_by_frame=emitted_by_frame,
     )
     counts = aggregate_counts(events)
+    drive_contact_m = compute_drive_contact_m(
+        timeline,
+        possession,
+        locked_at_frame=locked_at_frame,
+    )
     for ev in events:
         logger.info(
             "[BallEvents] Event — frame=%s kind=%s lock_confidence=%s phase=%s",
@@ -199,7 +205,7 @@ def run_events(
             ball_samples=ball_samples,
             events_found=counts.model_dump(),
         )
-    return counts, ball_samples, events
+    return counts, ball_samples, events, drive_contact_m
 
 
 @dataclass
@@ -250,7 +256,7 @@ def run_events_multi(
     epochs: list[LockEpoch],
     *,
     fps: float,
-) -> tuple[PlayerEventCounts, int, LockEpoch | None, list[DetectedEvent]]:
+) -> tuple[PlayerEventCounts, int, LockEpoch | None, list[DetectedEvent], float]:
     """Run the possession FSM per lock epoch and aggregate the results.
 
     Event counts are summed across every epoch clearing a minimum-quality bar
@@ -264,19 +270,21 @@ def run_events_multi(
     total_samples = sum(_count_detections(ep.ball_states) for ep in epochs)
     aggregated = PlayerEventCounts()
     all_events: list[DetectedEvent] = []
+    drive_contact_m = 0.0
     best: LockEpoch | None = None
     best_score = (-1, -1)
     counted = 0
     for ep in epochs:
         if not _epoch_analyzable(ep, min_visible=min_visible):
             continue
-        counts, _, events = run_events(
+        counts, _, events, epoch_drive_m = run_events(
             ep.ball_states,
             ep.target_samples,
             fps=fps,
             locked_at_frame=ep.locked_at_frame,
         )
         all_events.extend(events)
+        drive_contact_m += epoch_drive_m
         aggregated = PlayerEventCounts(
             Pass=aggregated.Pass + counts.Pass,
             Shot=aggregated.Shot + counts.Shot,
@@ -296,7 +304,7 @@ def run_events_multi(
         (best.start_frame, best.end_frame, best.locked_at_frame) if best else None,
         aggregated.model_dump(),
     )
-    return aggregated, total_samples, best, all_events
+    return aggregated, total_samples, best, all_events, drive_contact_m
 
 
 def _count_detections(ball_states: list[BallState]) -> int:

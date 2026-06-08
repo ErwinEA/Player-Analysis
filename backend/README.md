@@ -47,7 +47,10 @@ On first run, Ultralytics downloads `yolov8n.pt` automatically (unless you set `
 | `COLOR_LOCK_THRESHOLD` | `0.15` | Mean per-frame pixel-match fraction needed to lock by color |
 | `COLOR_MATCH_MIN` | `0.05` | Floor: best color track still wins if above this when nothing stronger matches |
 | `NUMBER_MIN_CONF` | `0.40` | EasyOCR confidence floor to count a digit reading as a vote |
+| `CLASSIFIER_VOTE_WEIGHT` | `1.0` | Scale on EfficientNet target-jersey confidence when accumulating lock votes |
+| `CLASSIFIER_MIN_CONF` | `0.5` | Min classifier confidence to count a target read (and to override disagreeing OCR) |
 | `NUMBER_LOCK_VOTES` | `1.5` | Cumulative number-OCR confidence required to lock by number alone |
+| `LOCK_CONSECUTIVE_FRAMES` | `2` | Consecutive target-jersey OCR observations (same `track_id`, within `OCR_EVERY` spacing) before `number` / `number+name` / `reid` lock (color unchanged) |
 | `NAME_MIN_CONF` | `0.35` | EasyOCR confidence floor to count a name reading as a vote |
 | `NAME_MIN_RATIO` | `0.6` | Min fuzzy similarity (0-1) between OCR'd name and the user's name |
 | `OCR_MIN_CROP_HEIGHT` | `64` | Upscale jersey crops shorter than this before OCR |
@@ -93,7 +96,7 @@ export COLOR_TOLERANCE=10
 The pipeline checks each candidate track in priority order. The **first** stage that succeeds locks `target.track_id` for the rest of the video — no further OCR or color work runs on other tracks.
 
 1. **`number+name`** — EasyOCR finds the user's jersey number on the back, *and* OCR'd name (letters above the number) fuzzy-matches `details.name` (similarity >= `NAME_MIN_RATIO`).
-2. **`number`** — Cumulative OCR confidence for the user's jersey number on a single track reaches `NUMBER_LOCK_VOTES`.
+2. **`number`** — Cumulative jersey-number vote weight on a single track reaches `NUMBER_LOCK_VOTES` (classifier + OCR combined per frame when `jersey_number_b0.pt` is loaded).
 3. **`color`** — At end of video, picks the track whose torso+shorts pixels most often fall within `COLOR_TOLERANCE` units of the user's primary or secondary hex color. Used only if 1 and 2 both failed.
 
 If none of the three pass their thresholds, `target.method` is `"none"` and `player` stays `null` on all rows.

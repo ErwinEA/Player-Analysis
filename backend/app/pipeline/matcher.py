@@ -33,6 +33,41 @@ def _number_lock_votes() -> float:
     return float(os.environ.get("NUMBER_LOCK_VOTES", "1.0"))
 
 
+def _classifier_vote_weight() -> float:
+    return float(os.environ.get("CLASSIFIER_VOTE_WEIGHT", "1.0"))
+
+
+def _classifier_min_conf() -> float:
+    return float(os.environ.get("CLASSIFIER_MIN_CONF", "0.5"))
+
+
+def combine_target_vote_conf(
+    target_jersey: int,
+    *,
+    classifier_number: int | None,
+    classifier_conf: float,
+    ocr_number: int | None,
+    ocr_conf: float,
+) -> float:
+    """One frame of target-jersey vote weight from classifier + OCR (no double count)."""
+    clf_w = _classifier_vote_weight()
+    clf_min = _classifier_min_conf()
+    num_min = _number_min_conf()
+
+    clf_hit = (
+        classifier_number == target_jersey and classifier_conf >= clf_min
+    )
+    ocr_hit = ocr_number == target_jersey and ocr_conf >= num_min
+
+    if clf_hit and ocr_hit:
+        return max(classifier_conf * clf_w, ocr_conf)
+    if clf_hit:
+        return classifier_conf * clf_w
+    if ocr_hit:
+        return ocr_conf
+    return 0.0
+
+
 def _reid_lock_threshold() -> float:
     return float(os.environ.get("REID_LOCK_THRESHOLD", "0.65"))
 
@@ -43,6 +78,11 @@ def _reid_min_samples() -> int:
 
 def _reid_prototype_min_conf() -> float:
     return float(os.environ.get("REID_PROTOTYPE_MIN_CONF", "0.40"))
+
+
+def _lock_consecutive_frames() -> int:
+    """Min consecutive frames with target-jersey OCR before number/ReID lock."""
+    return max(1, int(os.environ.get("LOCK_CONSECUTIVE_FRAMES", "2")))
 
 
 def _name_letters(text: str | None) -> str:
@@ -91,6 +131,8 @@ class TrackIdentityMatcher:
         self.has_number_match: dict[int, bool] = defaultdict(bool)
         self.reid_embeddings: dict[int, list[np.ndarray]] = defaultdict(list)
         self.reid_prototype: np.ndarray | None = None
+        self._number_streak: dict[int, int] = {}
+        self._last_match_frame: dict[int, int] = {}
 
         self.lock: TargetLock | None = None
 
@@ -117,6 +159,36 @@ class TrackIdentityMatcher:
             self.color_scores.clear()
             self.has_number_match.clear()
             self.reid_embeddings.clear()
+        self._number_streak.clear()
+        self._last_match_frame.clear()
+
+    def begin_frame(self, frame_idx: int, *, ocr_every: int = 1) -> None:
+        """Expire streaks when a track missed more than one OCR period."""
+        max_gap = max(1, ocr_every)
+        for track_id in list(self._number_streak.keys()):
+            last = self._last_match_frame.get(track_id)
+            if last is None or frame_idx - last > max_gap:
+                self._number_streak[track_id] = 0
+
+    def _record_number_match(
+        self, track_id: int, frame_idx: int, *, ocr_every: int = 1
+    ) -> None:
+        """Consecutive target-jersey observations (within OCR spacing)."""
+        if self._last_match_frame.get(track_id) == frame_idx:
+            return
+        max_gap = max(1, ocr_every)
+        last = self._last_match_frame.get(track_id)
+        if last is not None and frame_idx - last <= max_gap:
+            self._number_streak[track_id] = self._number_streak.get(track_id, 0) + 1
+        else:
+            self._number_streak[track_id] = 1
+        self._last_match_frame[track_id] = frame_idx
+
+    def _clear_number_match_streak(self, track_id: int) -> None:
+        self._number_streak[track_id] = 0
+
+    def _temporal_lock_ready(self, track_id: int) -> bool:
+        return self._number_streak.get(track_id, 0) >= _lock_consecutive_frames()
 
     def observe_number(
         self,
@@ -124,22 +196,51 @@ class TrackIdentityMatcher:
         number: int | None,
         conf: float,
         *,
+        frame_idx: int | None = None,
+        ocr_every: int = 1,
+        classifier_number: int | None = None,
+        classifier_conf: float = 0.0,
+        ocr_number: int | None = None,
+        ocr_conf: float = 0.0,
+        use_classifier_weighted_vote: bool = False,
         embedding: np.ndarray | None = None,
     ) -> None:
-        if number is None or conf < _number_min_conf():
+        if use_classifier_weighted_vote:
+            vote_conf = combine_target_vote_conf(
+                self.target_jersey,
+                classifier_number=classifier_number,
+                classifier_conf=classifier_conf,
+                ocr_number=ocr_number,
+                ocr_conf=ocr_conf,
+            )
+            target_hit = vote_conf >= _number_min_conf()
+        else:
+            vote_conf = conf if number == self.target_jersey else 0.0
+            target_hit = (
+                number == self.target_jersey and conf >= _number_min_conf()
+            )
+
+        if frame_idx is not None:
+            if not target_hit:
+                self._clear_number_match_streak(track_id)
+            else:
+                self._record_number_match(
+                    track_id, frame_idx, ocr_every=ocr_every
+                )
+
+        if not target_hit:
             return
-        if number == self.target_jersey:
-            self.number_votes[track_id] += conf
-            self.has_number_match[track_id] = True
-            if (
-                self.reid_prototype is None
-                and embedding is not None
-                and conf >= _reid_prototype_min_conf()
-            ):
-                vec = np.asarray(embedding, dtype=np.float32).reshape(-1)
-                norm = np.linalg.norm(vec)
-                if norm > 0:
-                    self.reid_prototype = vec / norm
+        self.number_votes[track_id] += vote_conf
+        self.has_number_match[track_id] = True
+        if (
+            self.reid_prototype is None
+            and embedding is not None
+            and vote_conf >= _reid_prototype_min_conf()
+        ):
+            vec = np.asarray(embedding, dtype=np.float32).reshape(-1)
+            norm = np.linalg.norm(vec)
+            if norm > 0:
+                self.reid_prototype = vec / norm
 
     def observe_reid(self, track_id: int, embedding: np.ndarray) -> None:
         vec = np.asarray(embedding, dtype=np.float32).reshape(-1)
@@ -177,7 +278,7 @@ class TrackIdentityMatcher:
             if combined > best_score:
                 best_id = track_id
                 best_score = combined
-        if best_id is None:
+        if best_id is None or not self._temporal_lock_ready(best_id):
             return None
         return TargetLock(
             track_id=best_id,
@@ -204,7 +305,11 @@ class TrackIdentityMatcher:
             if sim > best_sim:
                 best_id = track_id
                 best_sim = sim
-        if best_id is None or best_sim < threshold:
+        if (
+            best_id is None
+            or best_sim < threshold
+            or not self._temporal_lock_ready(best_id)
+        ):
             return None
         return TargetLock(
             track_id=best_id,
@@ -221,7 +326,7 @@ class TrackIdentityMatcher:
             if num_score >= threshold and num_score > best_score:
                 best_id = track_id
                 best_score = num_score
-        if best_id is None:
+        if best_id is None or not self._temporal_lock_ready(best_id):
             return None
         return TargetLock(
             track_id=best_id,

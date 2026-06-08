@@ -27,6 +27,7 @@ _MIN_CONF = float(os.environ.get("JERSEY_CLS_MIN_CONF", "0.75"))
 _TARGET_MIN_CONF = float(os.environ.get("JERSEY_TARGET_MIN_CONF", "0.55"))
 _SOFT_MIN_CONF = float(os.environ.get("JERSEY_SOFT_MIN_CONF", "0.25"))
 _NUMBER_MIN_CONF = float(os.environ.get("NUMBER_MIN_CONF", "0.40"))
+_CLASSIFIER_MIN_CONF = float(os.environ.get("CLASSIFIER_MIN_CONF", "0.5"))
 _OCR_MIN_CROP_HEIGHT = int(os.environ.get("OCR_MIN_CROP_HEIGHT", "64"))
 _DEFAULT_INPUT_SIZE = 224
 _DEFAULT_CLASS_NAMES = ["unknown"] + [str(n) for n in range(1, 100)]
@@ -246,19 +247,43 @@ class JerseyNumberClassifier:
             probs = torch.softmax(self.model(tensor), dim=1)[0]
         return float(probs[idx].item())
 
-    def read_number_detailed(
+    def _classifier_vote_reading(
         self,
-        frame: NDArray,
-        bbox: list[float],
+        raw_crop: NDArray,
         *,
-        target_number: int | None = None,
-    ) -> tuple[int | None, float, list[tuple[str, float]]]:
-        """Returns (number, confidence, raw reads for debug)."""
-        raw_crop = number_crop(frame, bbox)
-        if raw_crop.size == 0:
-            return None, 0.0, []
+        target_number: int | None,
+        num: int | None,
+        conf: float,
+    ) -> tuple[int | None, float]:
+        """Classifier signal for lock votes (target prob + argmax)."""
+        if self.model is None or raw_crop.size == 0:
+            return None, 0.0
+        vote_num, vote_conf = num, conf
+        if target_number is not None:
+            target_prob = self._target_probability(raw_crop, target_number)
+            target_threshold = max(
+                _TARGET_MIN_CONF, _NUMBER_MIN_CONF, _CLASSIFIER_MIN_CONF
+            )
+            if target_prob >= target_threshold and (
+                num is None or num == target_number or target_prob > conf
+            ):
+                return target_number, target_prob
+        if vote_num is not None and vote_conf >= _CLASSIFIER_MIN_CONF:
+            return vote_num, vote_conf
+        return None, 0.0
 
-        num, conf, label = self.predict_crop(raw_crop)
+    def _pick_display_reading(
+        self,
+        raw_crop: NDArray,
+        *,
+        target_number: int | None,
+        num: int | None,
+        conf: float,
+        label: str,
+        ocr_num: int | None,
+        ocr_conf: float,
+        ocr_raw: list[tuple[str, float]],
+    ) -> tuple[int | None, float, list[tuple[str, float]]]:
         if num is not None and conf >= _MIN_CONF:
             return num, conf, [(f"classifier:{label}", conf)]
 
@@ -275,8 +300,6 @@ class JerseyNumberClassifier:
         if num is not None and conf >= _SOFT_MIN_CONF:
             return num, conf, [(f"classifier_soft:{label}", conf)]
 
-        ocr_crop = preprocess_crop_for_ocr(raw_crop)
-        ocr_num, ocr_conf, ocr_raw = self._ocr_fallback.read(ocr_crop)
         if ocr_num is not None and ocr_conf >= _NUMBER_MIN_CONF:
             return ocr_num, ocr_conf, ocr_raw
         if num is not None and conf >= _SOFT_MIN_CONF:
@@ -284,6 +307,68 @@ class JerseyNumberClassifier:
         if ocr_num is not None:
             return ocr_num, ocr_conf, ocr_raw
         return None, 0.0, ocr_raw
+
+    def read_number_sources_detailed(
+        self,
+        frame: NDArray,
+        bbox: list[float],
+        *,
+        target_number: int | None = None,
+    ) -> tuple[
+        int | None,
+        float,
+        int | None,
+        float,
+        int | None,
+        float,
+        list[tuple[str, float]],
+    ]:
+        """Display read plus separate classifier/OCR sources for weighted lock votes."""
+        raw_crop = number_crop(frame, bbox)
+        if raw_crop.size == 0:
+            return None, 0.0, None, 0.0, None, 0.0, []
+
+        num, conf, label = self.predict_crop(raw_crop)
+        clf_num, clf_conf = self._classifier_vote_reading(
+            raw_crop, target_number=target_number, num=num, conf=conf
+        )
+        ocr_crop = preprocess_crop_for_ocr(raw_crop)
+        ocr_num, ocr_conf, ocr_raw = self._ocr_fallback.read(ocr_crop)
+        display_num, display_conf, display_raw = self._pick_display_reading(
+            raw_crop,
+            target_number=target_number,
+            num=num,
+            conf=conf,
+            label=label,
+            ocr_num=ocr_num,
+            ocr_conf=ocr_conf,
+            ocr_raw=ocr_raw,
+        )
+        raw = list(display_raw)
+        if clf_num is not None:
+            raw.insert(0, (f"classifier_vote:{clf_num}", clf_conf))
+        return (
+            display_num,
+            display_conf,
+            clf_num,
+            clf_conf,
+            ocr_num,
+            ocr_conf,
+            raw,
+        )
+
+    def read_number_detailed(
+        self,
+        frame: NDArray,
+        bbox: list[float],
+        *,
+        target_number: int | None = None,
+    ) -> tuple[int | None, float, list[tuple[str, float]]]:
+        """Returns (number, confidence, raw reads for debug)."""
+        display_num, display_conf, _cn, _cc, _on, _oc, raw = (
+            self.read_number_sources_detailed(frame, bbox, target_number=target_number)
+        )
+        return display_num, display_conf, raw
 
     def read_number(self, frame: NDArray, bbox: list[float]) -> tuple[int | None, float]:
         num, conf, _raw = self.read_number_detailed(frame, bbox)

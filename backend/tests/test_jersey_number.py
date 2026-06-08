@@ -79,7 +79,7 @@ def test_read_number_detailed_target_requires_agreement():
         )
         assert num == 7
         assert conf == 0.9
-        assert raw[0][0].startswith("classifier:")
+        assert any(entry[0].startswith("classifier") for entry in raw)
 
 
 def test_preprocess_crop_empty():

@@ -100,6 +100,25 @@ class JerseyOCR:
             frame, bbox, target_number=target_number
         )
 
+    def read_number_sources_detailed(
+        self,
+        frame: NDArray,
+        bbox: list[float],
+        *,
+        target_number: int | None = None,
+    ) -> tuple[
+        int | None,
+        float,
+        int | None,
+        float,
+        int | None,
+        float,
+        list[tuple[str, float]],
+    ]:
+        return self._number_reader.read_number_sources_detailed(
+            frame, bbox, target_number=target_number
+        )
+
     def read_name_detailed(
         self, frame: NDArray, bbox: list[float]
     ) -> tuple[str | None, float, list[tuple[str, float]]]:

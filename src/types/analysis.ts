@@ -55,6 +55,19 @@ export type MovementStats = {
   units: string;
 };
 
+export type HeatmapZoneSummary = {
+  defensive_third_pct: number;
+  middle_third_pct: number;
+  attacking_third_pct: number;
+  left_pct: number;
+  center_pct: number;
+  right_pct: number;
+  central_pct: number;
+  wide_pct: number;
+  hottest_x_m: number | null;
+  hottest_y_m: number | null;
+};
+
 export type HeatmapResult = {
   grid_cols: number;
   grid_rows: number;
@@ -62,6 +75,7 @@ export type HeatmapResult = {
   pitch_width_m: number;
   sample_count: number;
   image_png_base64: string;
+  zone_summary?: HeatmapZoneSummary | null;
 };
 
 export type PlayerEventCounts = {

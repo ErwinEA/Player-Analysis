@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint ."
+    "lint": "ESLINT_USE_FLAT_CONFIG=false eslint .",
+    "test:e2e": "playwright test",
+    "test:e2e:analyze": "playwright test tests/e2e-analyze.spec.ts --project=chromium"
   },
   "dependencies": {
     "next": "^15.3.2",

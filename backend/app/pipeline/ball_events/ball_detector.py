@@ -21,6 +21,20 @@ logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 
+_ball_yolo_model = None
+_ball_yolo_weights: str | None = None
+
+
+def _shared_ball_yolo(weights: str):
+    """Process-wide lazy singleton for ball YOLO weights."""
+    global _ball_yolo_model, _ball_yolo_weights
+    if _ball_yolo_model is None or _ball_yolo_weights != weights:
+        from ultralytics import YOLO
+
+        _ball_yolo_model = YOLO(weights)
+        _ball_yolo_weights = weights
+    return _ball_yolo_model
+
 
 def _env_float(name: str, default: float) -> float:
     raw = os.environ.get(name, "").strip()
@@ -217,9 +231,7 @@ class BallDetector:
             return
 
         try:
-            from ultralytics import YOLO
-
-            self._model = YOLO(resolved)
+            self._model = _shared_ball_yolo(resolved)
             self.available = True
             self.weights = resolved
             logger.info("BallDetector YOLO on device=%s", self._device)

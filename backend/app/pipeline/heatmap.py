@@ -37,6 +37,20 @@ class HeatmapConfig:
 
 
 @dataclass(frozen=True)
+class HeatmapZoneSummary:
+    defensive_third_pct: float
+    middle_third_pct: float
+    attacking_third_pct: float
+    left_pct: float
+    center_pct: float
+    right_pct: float
+    central_pct: float
+    wide_pct: float
+    hottest_x_m: float | None
+    hottest_y_m: float | None
+
+
+@dataclass(frozen=True)
 class HeatmapResult:
     grid_cols: int
     grid_rows: int
@@ -44,9 +58,130 @@ class HeatmapResult:
     pitch_width_m: float
     sample_count: int
     image_png_base64: str
+    zone_summary: HeatmapZoneSummary | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _pct(count: int, total: int) -> float:
+    if total <= 0:
+        return 0.0
+    return round(100.0 * count / total, 1)
+
+
+def summarize_positions(
+    positions: list[tuple[float, float]],
+    *,
+    length_m: float,
+    width_m: float,
+) -> HeatmapZoneSummary:
+    """Zone occupancy from raw metre samples (not smoothed grid)."""
+    n = len(positions)
+    if n == 0:
+        return HeatmapZoneSummary(
+            defensive_third_pct=0.0,
+            middle_third_pct=0.0,
+            attacking_third_pct=0.0,
+            left_pct=0.0,
+            center_pct=0.0,
+            right_pct=0.0,
+            central_pct=0.0,
+            wide_pct=0.0,
+            hottest_x_m=None,
+            hottest_y_m=None,
+        )
+
+    third_len = length_m / 3.0
+    third_w = width_m / 3.0
+    central_lo = width_m * 0.25
+    central_hi = width_m * 0.75
+
+    defensive = middle = attacking = 0
+    left = center = right = 0
+    central = wide = 0
+
+    for x_m, y_m in positions:
+        if x_m < third_len:
+            defensive += 1
+        elif x_m < 2.0 * third_len:
+            middle += 1
+        else:
+            attacking += 1
+
+        if y_m < third_w:
+            left += 1
+        elif y_m < 2.0 * third_w:
+            center += 1
+        else:
+            right += 1
+
+        if central_lo <= y_m <= central_hi:
+            central += 1
+        else:
+            wide += 1
+
+    return HeatmapZoneSummary(
+        defensive_third_pct=_pct(defensive, n),
+        middle_third_pct=_pct(middle, n),
+        attacking_third_pct=_pct(attacking, n),
+        left_pct=_pct(left, n),
+        center_pct=_pct(center, n),
+        right_pct=_pct(right, n),
+        central_pct=_pct(central, n),
+        wide_pct=_pct(wide, n),
+        hottest_x_m=None,
+        hottest_y_m=None,
+    )
+
+
+def hottest_zone_metres(
+    grid: np.ndarray,
+    *,
+    length_m: float,
+    width_m: float,
+    grid_cols: int,
+    grid_rows: int,
+) -> tuple[float | None, float | None]:
+    """Centre of the busiest grid cell in metres."""
+    if grid.size == 0 or grid.max() <= 0:
+        return None, None
+    row, col = (int(i) for i in np.unravel_index(int(np.argmax(grid)), grid.shape))
+    cell_x, cell_y = pitch_grid_shape(
+        length_m, width_m, grid_cols=grid_cols, grid_rows=grid_rows
+    )
+    return round((col + 0.5) * cell_x, 1), round((row + 0.5) * cell_y, 1)
+
+
+def build_zone_summary(
+    positions: list[tuple[float, float]],
+    grid: np.ndarray,
+    *,
+    length_m: float,
+    width_m: float,
+    grid_cols: int,
+    grid_rows: int,
+) -> HeatmapZoneSummary:
+    summary = summarize_positions(positions, length_m=length_m, width_m=width_m)
+    hot_x, hot_y = hottest_zone_metres(
+        grid,
+        length_m=length_m,
+        width_m=width_m,
+        grid_cols=grid_cols,
+        grid_rows=grid_rows,
+    )
+    return HeatmapZoneSummary(
+        defensive_third_pct=summary.defensive_third_pct,
+        middle_third_pct=summary.middle_third_pct,
+        attacking_third_pct=summary.attacking_third_pct,
+        left_pct=summary.left_pct,
+        center_pct=summary.center_pct,
+        right_pct=summary.right_pct,
+        central_pct=summary.central_pct,
+        wide_pct=summary.wide_pct,
+        hottest_x_m=hot_x,
+        hottest_y_m=hot_y,
+    )
 
 
 def pitch_grid_shape(
@@ -189,6 +324,14 @@ def build_heatmap(
         width_m=calibration.pitch_width_m,
         config=cfg,
     )
+    zone_summary = build_zone_summary(
+        positions,
+        grid,
+        length_m=calibration.pitch_length_m,
+        width_m=calibration.pitch_width_m,
+        grid_cols=cfg.grid_cols,
+        grid_rows=cfg.grid_rows,
+    )
     result = HeatmapResult(
         grid_cols=cfg.grid_cols,
         grid_rows=cfg.grid_rows,
@@ -196,6 +339,7 @@ def build_heatmap(
         pitch_width_m=calibration.pitch_width_m,
         sample_count=len(positions),
         image_png_base64=encode_png_base64(image),
+        zone_summary=zone_summary,
     )
     return result, image
 
@@ -255,6 +399,14 @@ def build_heatmap_from_metre_points(
         width_m=width_m,
         config=cfg,
     )
+    zone_summary = build_zone_summary(
+        filtered,
+        grid,
+        length_m=length_m,
+        width_m=width_m,
+        grid_cols=cfg.grid_cols,
+        grid_rows=cfg.grid_rows,
+    )
     return HeatmapResult(
         grid_cols=cfg.grid_cols,
         grid_rows=cfg.grid_rows,
@@ -262,4 +414,5 @@ def build_heatmap_from_metre_points(
         pitch_width_m=width_m,
         sample_count=len(filtered),
         image_png_base64=encode_png_base64(image),
+        zone_summary=zone_summary,
     )

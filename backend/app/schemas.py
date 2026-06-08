@@ -86,6 +86,19 @@ class MovementStats(BaseModel):
     units: str = "meters"
 
 
+class HeatmapZoneSummary(BaseModel):
+    defensive_third_pct: float = 0.0
+    middle_third_pct: float = 0.0
+    attacking_third_pct: float = 0.0
+    left_pct: float = 0.0
+    center_pct: float = 0.0
+    right_pct: float = 0.0
+    central_pct: float = 0.0
+    wide_pct: float = 0.0
+    hottest_x_m: float | None = None
+    hottest_y_m: float | None = None
+
+
 class HeatmapResult(BaseModel):
     grid_cols: int
     grid_rows: int
@@ -93,6 +106,7 @@ class HeatmapResult(BaseModel):
     pitch_width_m: float
     sample_count: int
     image_png_base64: str
+    zone_summary: HeatmapZoneSummary | None = None
 
 
 class PlayerEventCounts(BaseModel):

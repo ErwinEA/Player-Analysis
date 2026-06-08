@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 from backend.app.pipeline.bbox import is_valid_bbox
 from backend.app.pipeline.color import jersey_color_score
 from backend.app.pipeline.debug_ocr import OcrDebug
-from backend.app.pipeline.detector import PersonDetector
+from backend.app.pipeline.detector import get_person_detector
 from backend.app.pipeline.matcher import TrackIdentityMatcher
 from backend.app.pipeline.ocr import JerseyOCR
 from backend.app.pipeline.reid import get_reid_extractor
@@ -73,6 +73,22 @@ def _max_frames() -> int:
     if value <= 0:
         return DEFAULT_MAX_FRAMES
     return min(max(1, value), MAX_FRAMES_ENV_CAP)
+
+
+def _release_inference_memory() -> None:
+    """Return GPU/MPS memory after a long run so the next analyze starts faster."""
+    import gc
+
+    gc.collect()
+    try:
+        import torch
+
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+        elif torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
 
 
 def _frame_start() -> int:
@@ -397,6 +413,54 @@ def _append_target_row(
     )
 
 
+def _read_and_observe_jersey_number(
+    matcher: TrackIdentityMatcher,
+    ocr: JerseyOCR,
+    *,
+    frame,
+    bbox: list[float],
+    track_id: int,
+    target_jersey: int,
+    frame_idx: int,
+    embedding,
+    ocr_every: int = 1,
+) -> tuple[int | None, float, list[tuple[str, float]]]:
+    """One jersey read per track per frame; weighted votes when classifier is loaded."""
+    reader = ocr._number_reader
+    if reader.available:
+        num, conf, clf_num, clf_conf, ocr_num, ocr_conf, raw = (
+            ocr.read_number_sources_detailed(
+                frame, bbox, target_number=target_jersey
+            )
+        )
+        matcher.observe_number(
+            track_id,
+            num,
+            conf,
+            frame_idx=frame_idx,
+            ocr_every=ocr_every,
+            classifier_number=clf_num,
+            classifier_conf=clf_conf,
+            ocr_number=ocr_num,
+            ocr_conf=ocr_conf,
+            use_classifier_weighted_vote=True,
+            embedding=embedding,
+        )
+        return num, conf, raw
+    num, conf, raw = ocr.read_number_detailed(
+        frame, bbox, target_number=target_jersey
+    )
+    matcher.observe_number(
+        track_id,
+        num,
+        conf,
+        frame_idx=frame_idx,
+        ocr_every=ocr_every,
+        embedding=embedding,
+    )
+    return num, conf, raw
+
+
 def _scan_jersey_for_ball_events(
     *,
     frame,
@@ -450,7 +514,7 @@ def run_pipeline(
     include_masks_in_response: bool = False,
 ) -> AnalyzeResponse:
     """Run legacy analyze. Set include_masks_in_response=True for CLI mask export (keeps mask_rle when API would strip)."""
-    detector = PersonDetector()
+    detector = get_person_detector()
     tracker = PlayerTracker()
     ocr = JerseyOCR()
     matcher = TrackIdentityMatcher(
@@ -486,6 +550,14 @@ def run_pipeline(
         frame_cap = _max_frames()
         frame_start = _frame_start()
         kit_primary, kit_secondary = _kit_colors(details)
+
+        logger.info(
+            "Pipeline processing: video=%s frames_cap=%s jersey=%s calibration=%s",
+            video_path,
+            frame_cap,
+            details.jerseyNumber,
+            calibration_key or "(default)",
+        )
 
         calibration_skipped_reason: str | None = None
         calibration, matched_cal_name = _resolve_pitch_calibration(
@@ -569,6 +641,8 @@ def run_pipeline(
             if skip_ball:
                 suppressed_frame_count += 1
 
+            matcher.begin_frame(frame_idx, ocr_every=ocr_every)
+
             ts = frame_idx / fps if fps > 0 else 0.0
             this_frame_foot_m = None
             this_frame_foot_px = None
@@ -621,18 +695,18 @@ def run_pipeline(
                     should_ocr = frame_idx - last_ocr_frame[track_id] >= ocr_every
                     if should_ocr:
                         last_ocr_frame[track_id] = frame_idx
-                        num, num_conf, num_raw = ocr.read_number_detailed(
-                            frame,
-                            bbox,
-                            target_number=details.jerseyNumber,
+                        num, num_conf, num_raw = _read_and_observe_jersey_number(
+                            matcher,
+                            ocr,
+                            frame=frame,
+                            bbox=bbox,
+                            track_id=track_id,
+                            target_jersey=details.jerseyNumber,
+                            frame_idx=frame_idx,
+                            embedding=embedding,
+                            ocr_every=ocr_every,
                         )
                         name, name_conf, name_raw = ocr.read_name_detailed(frame, bbox)
-                        matcher.observe_number(
-                            track_id,
-                            num,
-                            num_conf,
-                            embedding=embedding,
-                        )
                         matcher.observe_name(track_id, name, name_conf)
                         if num_conf > 0:
                             last_ocr_conf[track_id] = num_conf
@@ -790,18 +864,14 @@ def run_pipeline(
                         and frame_idx - last_ocr_frame[seg_tid] >= ocr_every
                     ):
                         last_ocr_frame[seg_tid] = frame_idx
-                        num, num_conf, num_raw = ocr.read_number_detailed(
-                            frame,
-                            ocr_bbox,
-                            target_number=details.jerseyNumber,
-                        )
-                        name, name_conf, name_raw = ocr.read_name_detailed(
-                            frame, ocr_bbox
-                        )
-                        matcher.observe_number(
-                            seg_tid,
-                            num,
-                            num_conf,
+                        num, num_conf, num_raw = _read_and_observe_jersey_number(
+                            matcher,
+                            ocr,
+                            frame=frame,
+                            bbox=ocr_bbox,
+                            track_id=seg_tid,
+                            target_jersey=details.jerseyNumber,
+                            frame_idx=frame_idx,
                             embedding=(
                                 reid_extractor.embed(
                                     JerseyOCR.crop_for_ocr(frame, seg_bbox, ocr_bbox)
@@ -809,6 +879,10 @@ def run_pipeline(
                                 if reid_extractor is not None
                                 else None
                             ),
+                            ocr_every=ocr_every,
+                        )
+                        name, name_conf, name_raw = ocr.read_name_detailed(
+                            frame, ocr_bbox
                         )
                         matcher.observe_name(seg_tid, name, name_conf)
                         if num_conf > 0:
@@ -1004,6 +1078,14 @@ def run_pipeline(
                         )
 
             frame_idx += 1
+            if frame_idx % 250 == 0:
+                logger.info(
+                    "Pipeline progress: frame %s/%s lock=%s method=%s",
+                    frame_idx,
+                    min(frame_start + frame_cap, total_frames or frame_start + frame_cap),
+                    matcher.lock.track_id if matcher.lock else None,
+                    matcher.lock.method if matcher.lock else "none",
+                )
 
         # Archive the final in-progress lock window so its samples are analysed too.
         from backend.app.pipeline.ball_events.run_events import LockEpoch
@@ -1239,3 +1321,4 @@ def run_pipeline(
         )
     finally:
         cap.release()
+        _release_inference_memory()

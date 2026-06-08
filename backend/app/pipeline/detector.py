@@ -58,3 +58,14 @@ class PersonDetector:
         boxes = result.boxes.xyxy.cpu().numpy()
         scores = result.boxes.conf.cpu().numpy()
         return [([float(x) for x in box], float(score)) for box, score in zip(boxes, scores)]
+
+
+_person_detector: PersonDetector | None = None
+
+
+def get_person_detector() -> PersonDetector:
+    """Process-wide lazy singleton (avoids reloading YOLO weights per analyze request)."""
+    global _person_detector
+    if _person_detector is None:
+        _person_detector = PersonDetector()
+    return _person_detector

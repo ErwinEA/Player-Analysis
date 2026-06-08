@@ -7,9 +7,11 @@ import numpy as np
 from backend.app.pipeline.heatmap import (
     bin_positions,
     build_heatmap_from_rows,
+    build_zone_summary,
     meter_positions_from_rows,
     pitch_grid_shape,
     smooth_grid,
+    summarize_positions,
 )
 from backend.app.pipeline.pitch_homography import build_calibration
 from backend.app.schemas import Row
@@ -84,3 +86,49 @@ def test_build_heatmap_from_rows():
     assert result.grid_cols == 53
     assert result.grid_rows == 34
     assert len(result.image_png_base64) > 100
+    assert result.zone_summary is not None
+    zs = result.zone_summary
+    assert zs.hottest_x_m is not None
+    assert zs.hottest_y_m is not None
+    third_total = zs.defensive_third_pct + zs.middle_third_pct + zs.attacking_third_pct
+    assert abs(third_total - 100.0) < 0.2
+    channel_total = zs.left_pct + zs.center_pct + zs.right_pct
+    assert abs(channel_total - 100.0) < 0.2
+
+
+def test_summarize_positions_empty():
+    zs = summarize_positions([], length_m=105.0, width_m=68.0)
+    assert zs.defensive_third_pct == 0.0
+    assert zs.hottest_x_m is None
+
+
+def test_summarize_positions_attacking_right():
+    # All samples in attacking third, right channel
+    positions = [(80.0, 50.0), (85.0, 55.0), (90.0, 60.0)]
+    zs = summarize_positions(positions, length_m=105.0, width_m=68.0)
+    assert zs.attacking_third_pct == 100.0
+    assert zs.right_pct == 100.0
+    assert zs.wide_pct > zs.central_pct
+
+
+def test_build_zone_summary_hottest_cell():
+    positions = [(10.0, 10.0), (10.2, 10.1), (10.1, 9.9)]
+    grid = bin_positions(
+        positions,
+        length_m=105.0,
+        width_m=68.0,
+        grid_cols=53,
+        grid_rows=34,
+    )
+    zs = build_zone_summary(
+        positions,
+        grid,
+        length_m=105.0,
+        width_m=68.0,
+        grid_cols=53,
+        grid_rows=34,
+    )
+    assert zs.hottest_x_m is not None
+    assert zs.hottest_y_m is not None
+    assert zs.hottest_x_m < 35.0
+    assert zs.hottest_y_m < 23.0

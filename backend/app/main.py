@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import tempfile
@@ -222,11 +223,22 @@ async def analyze_default_video(details: str = Form(...)) -> AnalyzeResponse:
         raise HTTPException(status_code=422, detail="jerseyNumber must be between 1 and 99")
 
     video_path = str(get_default_video_file())
-    return run_pipeline(
+    logger.info(
+        "Analyze started (default video): jersey=%s calibration=testmatch2",
+        player_details.jerseyNumber,
+    )
+    result = await asyncio.to_thread(
+        run_pipeline,
         video_path,
         player_details,
         calibration_key="testmatch2",
     )
+    logger.info(
+        "Analyze finished: frames=%s target_method=%s",
+        result.video.frames,
+        result.target.method,
+    )
+    return result
 
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)
@@ -258,11 +270,24 @@ async def analyze(
         cal_key: str | None = None
         if calibration_name and calibration_name.strip():
             cal_key = normalize_calibration_name(calibration_name.strip())
-        return run_pipeline(
+        logger.info(
+            "Analyze started: upload=%s bytes jersey=%s calibration=%s",
+            written,
+            player_details.jerseyNumber,
+            cal_key or "(default)",
+        )
+        result = await asyncio.to_thread(
+            run_pipeline,
             tmp_path,
             player_details,
             calibration_key=cal_key,
         )
+        logger.info(
+            "Analyze finished: frames=%s target_method=%s",
+            result.video.frames,
+            result.target.method,
+        )
+        return result
     except HTTPException:
         raise
     except ValueError as exc:

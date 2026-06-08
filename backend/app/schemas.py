@@ -124,6 +124,36 @@ class InferredBallEvent(BaseModel):
     possession_confidence: str | None = None
 
 
+class InsightsPlayerContext(BaseModel):
+    name: str = ""
+    jerseyNumber: int = Field(ge=1, le=99)
+    teamName: str = ""
+
+
+class InferredEventsSummary(BaseModel):
+    weak_count: int = 0
+    total_count: int = 0
+    events: list[InferredBallEvent] = Field(default_factory=list)
+
+
+class InsightsRequest(BaseModel):
+    player: InsightsPlayerContext
+    target: TargetMatch
+    movement: MovementStats | None = None
+    event_counts: PlayerEventCounts | None = None
+    inferred_events_summary: InferredEventsSummary | None = None
+    zone_summary: HeatmapZoneSummary | None = None
+    heatmap_source: str | None = None
+    provenance: Literal["inferred"] | None = None
+    drive_contact_m: float | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class InsightsResponse(BaseModel):
+    summary: str | None = None
+    unavailable_reason: str | None = None
+
+
 class AnalyzeResponse(BaseModel):
     video: VideoMeta
     target: TargetMatch

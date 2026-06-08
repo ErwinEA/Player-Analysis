@@ -1,3 +1,4 @@
+import { parseInsightBlocks } from "@/lib/parseInsightSummary";
 import type { GameplayAnalysis } from "@/types/playerMetrics";
 import styles from "./GameplayAnalysisPanel.module.css";
 import { LightbulbIcon, SparkleIcon } from "./icons";
@@ -5,14 +6,18 @@ import { LightbulbIcon, SparkleIcon } from "./icons";
 type GameplayAnalysisPanelProps = {
   analysis: GameplayAnalysis | null;
   isLoading: boolean;
+  isInsightsLoading?: boolean;
   errorMessage?: string | null;
+  unavailableReason?: string | null;
   hasResult: boolean;
 };
 
 export function GameplayAnalysisPanel({
   analysis,
   isLoading,
+  isInsightsLoading = false,
   errorMessage = null,
+  unavailableReason = null,
   hasResult,
 }: GameplayAnalysisPanelProps) {
   return (
@@ -42,26 +47,53 @@ export function GameplayAnalysisPanel({
         </p>
       )}
 
-      {isLoading && (
+      {isInsightsLoading && (
         <p className={styles.placeholder} aria-live="polite">
-          Reviewing player stats and generating gameplay insights…
+          Generating AI insights…
         </p>
       )}
 
-      {!isLoading && !errorMessage && analysis?.summary && (
+      {!isLoading && !isInsightsLoading && !errorMessage && analysis?.summary && (
         <div className={styles.content} aria-live="polite" aria-atomic="true">
-          <p className={styles.summary}>{analysis.summary}</p>
+          <div className={styles.summaryBlocks}>
+            {parseInsightBlocks(analysis.summary).map((block) => (
+              <p
+                key={block}
+                className={
+                  block.startsWith("Caveat:")
+                    ? styles.summaryCaveat
+                    : styles.summaryBlock
+                }
+              >
+                {block}
+              </p>
+            ))}
+          </div>
         </div>
       )}
 
-      {!isLoading && !errorMessage && !analysis?.summary && (
+      {!isLoading &&
+        !isInsightsLoading &&
+        !errorMessage &&
+        !analysis?.summary &&
+        unavailableReason && (
+          <p className={styles.placeholder} role="status">
+            {unavailableReason}
+          </p>
+        )}
+
+      {!isLoading &&
+        !isInsightsLoading &&
+        !errorMessage &&
+        !analysis?.summary &&
+        !unavailableReason && (
         <div className={styles.emptyState}>
           <span className={styles.emptyIcon} aria-hidden="true">
             <LightbulbIcon className={styles.emptyIconSvg} />
           </span>
           <p className={styles.placeholder}>
             {hasResult
-              ? "Gameplay insights will appear here once the analysis engine is connected."
+              ? "No AI insights were generated for this run."
               : "Run an analysis to receive an AI-generated breakdown of the player's performance in the video."}
           </p>
         </div>

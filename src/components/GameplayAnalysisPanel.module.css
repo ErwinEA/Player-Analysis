@@ -59,11 +59,26 @@
   flex: 1;
 }
 
-.summary {
+.summaryBlocks {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.summaryBlock {
   margin: 0;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--text-body);
+}
+
+.summaryCaveat {
+  margin: 4px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--glass-border);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-muted);
 }
 
 .emptyState {

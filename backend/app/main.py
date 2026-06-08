@@ -24,8 +24,11 @@ from backend.app.pitch_api import (
 from backend.app.pipeline.pitch_homography import default_calibration_dir
 from backend.app.pipeline.run import run_pipeline
 from backend.app.pipeline.segmentation import mobile_sam_health
+from backend.app.pipeline.insights import generate_insights, ollama_health
 from backend.app.schemas import (
     AnalyzeResponse,
+    InsightsRequest,
+    InsightsResponse,
     PitchCalibrationPreviewResponse,
     PitchCalibrationSaveRequest,
     PitchCalibrationSaveResponse,
@@ -84,7 +87,12 @@ def root() -> dict[str, str]:
 def health() -> dict[str, object]:
     sam = mobile_sam_health()
     top_status = "error" if sam.get("status") == "error" else "ok"
-    return {"status": top_status, "mobile_sam": sam}
+    return {"status": top_status, "mobile_sam": sam, "ollama": ollama_health()}
+
+
+@app.post("/api/insights", response_model=InsightsResponse)
+async def insights(body: InsightsRequest) -> InsightsResponse:
+    return await asyncio.to_thread(generate_insights, body)
 
 
 @app.get("/api/pitch/template")

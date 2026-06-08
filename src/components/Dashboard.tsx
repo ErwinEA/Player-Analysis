@@ -1,7 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { analyzeVideo, checkHealth, type MobileSamHealth } from "@/lib/api";
+import {
+  analyzeVideo,
+  checkHealth,
+  fetchInsights,
+  type MobileSamHealth,
+} from "@/lib/api";
+import {
+  buildInsightsPayload,
+  hasInsightsInput,
+} from "@/lib/insightsPayload";
 import type { AnalyzeResponse, MovementStats } from "@/types/analysis";
 import {
   EMPTY_METRICS,
@@ -28,6 +37,7 @@ const INITIAL_DETAILS: PlayerDetails = {
 
 type ApiStatus = "checking" | "online" | "offline";
 type AnalyzeState = "idle" | "loading" | "done" | "error";
+type InsightsState = "idle" | "loading" | "done" | "unavailable";
 
 function isDetailsValid(details: PlayerDetails): boolean {
   return details.jerseyNumber >= 1 && details.jerseyNumber <= 99;
@@ -147,6 +157,11 @@ export function Dashboard() {
   const [metricsWarning, setMetricsWarning] = useState<string | null>(null);
   const [gameplayAnalysis, setGameplayAnalysis] =
     useState<GameplayAnalysis | null>(null);
+  const [insightsState, setInsightsState] = useState<InsightsState>("idle");
+  const [insightsUnavailableReason, setInsightsUnavailableReason] = useState<
+    string | null
+  >(null);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [calibrationOpen, setCalibrationOpen] = useState(false);
   const [uploadCalibrationReady, setUploadCalibrationReady] = useState(false);
@@ -155,6 +170,7 @@ export function Dashboard() {
     null,
   );
   const analyzeRunRef = useRef(0);
+  const insightsRunRef = useRef(0);
 
   const videoCalibrationKey = video
     ? calibrationKeyFromFilename(video.name)
@@ -190,6 +206,9 @@ export function Dashboard() {
     setMetrics(EMPTY_METRICS);
     setMetricsWarning(null);
     setGameplayAnalysis(null);
+    setInsightsState("idle");
+    setInsightsUnavailableReason(null);
+    setInsightsError(null);
     setErrorMessage(null);
     setAnalyzeState("idle");
   }, [
@@ -219,6 +238,9 @@ export function Dashboard() {
     setMetrics(EMPTY_METRICS);
     setMetricsWarning(null);
     setGameplayAnalysis(null);
+    setInsightsState("idle");
+    setInsightsUnavailableReason(null);
+    setInsightsError(null);
 
     try {
       const response = await analyzeVideo(video, details, {
@@ -232,24 +254,49 @@ export function Dashboard() {
       const { metrics: nextMetrics, warning } = metricsForResult(response);
       setMetrics(nextMetrics);
       setMetricsWarning(warning);
-      if (response.event_counts && response.provenance === "inferred") {
-        const ec = response.event_counts;
-        const weakCount =
-          response.inferred_events?.filter((e) => e.lock_confidence === "weak")
-            .length ?? 0;
-        const weakNote =
-          weakCount > 0 ? ` (${weakCount} pre-lock/uncertain).` : "";
-        setGameplayAnalysis({
-          summary: `Inferred: ${ec.Pass} passes, ${ec.Shot} shots, ${ec.Goal} goals, ${ec.Drive} drives${
-            response.drive_contact_m != null && response.drive_contact_m > 0
-              ? ` (${response.drive_contact_m.toFixed(0)} m ball contact while driving)`
-              : ""
-          }.${weakNote}`,
-        });
-      } else {
-        setGameplayAnalysis(null);
-      }
       setAnalyzeState("done");
+
+      if (hasInsightsInput(response)) {
+        const insightsRunId = ++insightsRunRef.current;
+        setInsightsState("loading");
+        try {
+          const insightsResponse = await fetchInsights(
+            buildInsightsPayload(response, details),
+          );
+          if (
+            insightsRunId !== insightsRunRef.current ||
+            runId !== analyzeRunRef.current
+          ) {
+            return;
+          }
+          if (insightsResponse.summary) {
+            setGameplayAnalysis({ summary: insightsResponse.summary });
+            setInsightsUnavailableReason(null);
+            setInsightsState("done");
+          } else {
+            setGameplayAnalysis(null);
+            setInsightsUnavailableReason(
+              insightsResponse.unavailable_reason ??
+                "AI insights unavailable — is Ollama running? (`ollama serve`)",
+            );
+            setInsightsState("unavailable");
+          }
+        } catch (insightsErr) {
+          if (
+            insightsRunId !== insightsRunRef.current ||
+            runId !== analyzeRunRef.current
+          ) {
+            return;
+          }
+          setGameplayAnalysis(null);
+          setInsightsError(
+            insightsErr instanceof Error
+              ? insightsErr.message
+              : "Failed to fetch AI insights",
+          );
+          setInsightsState("unavailable");
+        }
+      }
     } catch (err) {
       if (runId !== analyzeRunRef.current) return;
       setErrorMessage(err instanceof Error ? err.message : "Analysis failed");
@@ -399,6 +446,9 @@ export function Dashboard() {
           <GameplayAnalysisPanel
             analysis={gameplayAnalysis}
             isLoading={isLoading}
+            isInsightsLoading={insightsState === "loading"}
+            errorMessage={insightsError}
+            unavailableReason={insightsUnavailableReason}
             hasResult={hasResult}
           />
         </main>

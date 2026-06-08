@@ -1,5 +1,6 @@
 import type { PlayerDetails } from "@/components/Sidebar";
 import type { AnalyzeResponse } from "@/types/analysis";
+import type { InsightsRequest, InsightsResponse } from "@/types/insights";
 
 export type PitchFrameResponse = {
   name: string;
@@ -34,9 +35,16 @@ export type MobileSamHealth = {
   status: "ok" | "loading" | "error";
 };
 
+export type OllamaHealth = {
+  reachable: boolean;
+  model: string;
+  base_url: string;
+};
+
 export type HealthResponse = {
   status: string;
   mobile_sam: MobileSamHealth;
+  ollama?: OllamaHealth;
 };
 
 export async function checkHealth(): Promise<HealthResponse> {
@@ -82,6 +90,22 @@ export async function analyzeVideo(
   }
 
   return res.json() as Promise<AnalyzeResponse>;
+}
+
+export async function fetchInsights(
+  payload: InsightsRequest,
+): Promise<InsightsResponse> {
+  const res = await fetch(`${getApiBaseUrl()}/api/insights`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    throw new Error(await parseErrorDetail(res));
+  }
+
+  return res.json() as Promise<InsightsResponse>;
 }
 
 export async function fetchPitchFrame(

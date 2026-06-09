@@ -111,11 +111,15 @@ export function HeatMapPanel({
     displaySrc !== null,
   );
   const heatmapStatusId = "heat-map-status";
+  const heatmapLegendId = "heat-map-intensity-legend";
+  const intensitySummary = hasHeatmap
+    ? "Color intensity: cooler blue areas mean less time spent; warmer red areas mean more time spent. Scale runs from low (blue) through green and yellow to high (red)."
+    : null;
   const heatmapAlt =
     hasHeatmap && heatmapSource === "fallback_track"
-      ? "Demo heat map on football pitch; target player was not locked"
-      : hasHeatmap
-        ? "Player position heat map on football pitch"
+      ? `Demo heat map: ${heatmap?.sample_count ?? 0} samples on a ${heatmap?.grid_cols ?? 0} by ${heatmap?.grid_rows ?? 0} grid. Warmer red areas indicate more time spent; target player was not locked.`
+      : hasHeatmap && heatmap
+        ? `Player position heat map: ${heatmap.sample_count} samples on a ${heatmap.grid_cols} by ${heatmap.grid_rows} grid. Warmer red areas indicate more time spent.`
         : "Top-down football pitch diagram";
   const emptyLabel =
     pitchError && !displaySrc ? "Pitch diagram unavailable" : statusText;
@@ -159,7 +163,8 @@ export function HeatMapPanel({
           )}
           {hasHeatmap && heatmap ? (
             <span>
-              {heatmap.sample_count} positions · {heatmap.grid_cols}×{heatmap.grid_rows} grid
+              {heatmap.sample_count} positions · {heatmap.grid_cols}×
+              {heatmap.grid_rows} grid · warmer/darker = more time spent
             </span>
           ) : hasResult ? (
             <span>
@@ -173,6 +178,12 @@ export function HeatMapPanel({
             <span>Runs after analyze</span>
           )}
         </p>
+
+      {hasHeatmap && intensitySummary && (
+        <p id={heatmapLegendId} className="srOnly">
+          {intensitySummary}
+        </p>
+      )}
 
       <div className={styles.canvas}>
         {isLoading && (
@@ -189,7 +200,11 @@ export function HeatMapPanel({
               }
               src={displaySrc}
               alt={heatmapAlt}
-              aria-describedby={heatmapStatusId}
+              aria-describedby={
+                hasHeatmap
+                  ? `${heatmapStatusId} ${heatmapLegendId}`
+                  : heatmapStatusId
+              }
               className={styles.pitchImage}
             />
             {hasHeatmap && (

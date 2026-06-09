@@ -71,13 +71,16 @@ async function parseErrorDetail(res: Response): Promise<string> {
 export async function analyzeVideo(
   video: File,
   details: PlayerDetails,
-  options?: { calibrationName?: string | null },
+  options?: { calibrationName?: string | null; renderVideo?: boolean },
 ): Promise<AnalyzeResponse> {
   const form = new FormData();
   form.append("video", video);
   form.append("details", JSON.stringify(details));
   if (options?.calibrationName?.trim()) {
     form.append("calibration_name", options.calibrationName.trim());
+  }
+  if (options?.renderVideo) {
+    form.append("render_video", "true");
   }
 
   const res = await fetch(`${getApiBaseUrl()}/api/analyze`, {

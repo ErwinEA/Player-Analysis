@@ -7,7 +7,7 @@ const TEST_VIDEO = path.resolve(
 );
 
 test.describe("Full analyze flow (testmatch2)", () => {
-  test.describe.configure({ timeout: 60 * 60 * 1000 });
+  test.describe.configure({ timeout: 90 * 60 * 1000 });
 
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
@@ -23,7 +23,8 @@ test.describe("Full analyze flow (testmatch2)", () => {
     page,
   }) => {
     await page.getByLabel("Jersey number").fill("23");
-    await page.getByLabel("Player name (optional)").fill("H.LOZANO");
+    // Intentional: user-requested name for E2E (not H.LOZANO on the shirt); may weaken number+name lock.
+    await page.getByLabel("Player name (optional)").fill("jesus");
     await page.getByRole("button", { name: "Green" }).first().click();
     await page
       .getByRole("group", { name: "Secondary / trim color" })
@@ -51,17 +52,14 @@ test.describe("Full analyze flow (testmatch2)", () => {
       page.getByRole("button", { name: /^Analyzing/i }),
     ).toBeVisible({ timeout: 15_000 });
 
-    await expect(
-      page.getByRole("button", { name: /^Analyze$/i }),
-    ).toBeVisible({ timeout: 45 * 60 * 1000 });
-    await expect(
-      page.getByRole("button", { name: /^Analyze$/i }),
-    ).toBeEnabled();
-    await expect(page.getByText(/Analysis failed:/)).toHaveCount(0);
-
+    // Wait for pipeline + insights to finish (5000 frames can exceed 45 min on MPS).
     await expect(
       page.getByText("Player position heat map", { exact: true }),
-    ).toBeVisible({ timeout: 60_000 });
+    ).toBeVisible({ timeout: 80 * 60 * 1000 });
+    await expect(page.getByText(/Analysis failed:/)).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: /^Analyze$/i }),
+    ).toBeEnabled({ timeout: 5 * 60 * 1000 });
 
     await page.screenshot({
       path: "test-results/e2e-analyze-complete.png",

@@ -20,6 +20,9 @@ type UploadAnalyzePanelProps = {
   jerseyNumber?: number;
   masksUnavailableReason?: string | null;
   mobileSamHealth?: MobileSamHealth | null;
+  annotatedVideoUrl?: string | null;
+  annotatedVideoUnavailableReason?: string | null;
+  maskFrameOffset?: number;
 };
 
 export function UploadAnalyzePanel({
@@ -34,6 +37,9 @@ export function UploadAnalyzePanel({
   jerseyNumber = 0,
   masksUnavailableReason = null,
   mobileSamHealth = null,
+  annotatedVideoUrl = null,
+  annotatedVideoUnavailableReason = null,
+  maskFrameOffset = 0,
 }: UploadAnalyzePanelProps) {
   const [checkingCalibration, setCheckingCalibration] = useState(false);
   const calibrationCheckRef = useRef(0);
@@ -79,6 +85,9 @@ export function UploadAnalyzePanel({
         jerseyNumber={jerseyNumber}
         masksUnavailableReason={masksUnavailableReason}
         mobileSamHealth={mobileSamHealth}
+        annotatedVideoUrl={annotatedVideoUrl}
+        annotatedVideoUnavailableReason={annotatedVideoUnavailableReason}
+        maskFrameOffset={maskFrameOffset}
       />
       {file && (
         <section

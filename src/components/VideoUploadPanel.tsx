@@ -29,6 +29,9 @@ type VideoUploadPanelProps = {
   jerseyNumber?: number;
   masksUnavailableReason?: string | null;
   mobileSamHealth?: MobileSamHealth | null;
+  annotatedVideoUrl?: string | null;
+  annotatedVideoUnavailableReason?: string | null;
+  maskFrameOffset?: number;
 };
 
 export function VideoUploadPanel({
@@ -40,17 +43,25 @@ export function VideoUploadPanel({
   jerseyNumber = 0,
   masksUnavailableReason = null,
   mobileSamHealth = null,
+  annotatedVideoUrl = null,
+  annotatedVideoUnavailableReason = null,
+  maskFrameOffset = 0,
 }: VideoUploadPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
   const lastPaintedFrameRef = useRef<number | null>(null);
+  const lastAnnouncedStatusRef = useRef("");
+  const lastAnnouncedFrameRef = useRef<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showMask, setShowMask] = useState(true);
   const [maskStatus, setMaskStatus] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+
+  const playbackUrl = annotatedVideoUrl ?? previewUrl;
+  const showingAnnotated = Boolean(annotatedVideoUrl);
 
   const maskRows = useMemo(
     () => (trackingRows ?? []).filter((r) => r.mask_rle),
@@ -82,80 +93,125 @@ export function VideoUploadPanel({
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
-  const paintMask = useCallback(() => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || !showMask || !hasMasks) {
-      setMaskStatus(
-        showMask && hasMasks
-          ? "Player mask: waiting for video…"
-          : "Player mask: hidden",
+  const announceMaskStatus = useCallback((message: string) => {
+    if (lastAnnouncedStatusRef.current === message) return;
+    lastAnnouncedStatusRef.current = message;
+    setMaskStatus(message);
+  }, []);
+
+  const paintMask = useCallback(
+    (options?: { announce?: boolean }) => {
+      const announce = options?.announce ?? false;
+
+      const maybeAnnounce = (message: string, frame?: number | null) => {
+        if (!announce) return;
+        if (frame !== undefined && frame !== null) {
+          if (
+            frame === lastAnnouncedFrameRef.current &&
+            lastAnnouncedStatusRef.current === message
+          ) {
+            return;
+          }
+          lastAnnouncedFrameRef.current = frame;
+        }
+        announceMaskStatus(message);
+      };
+
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (!video || !canvas || !showMask || !hasMasks) {
+        maybeAnnounce(
+          showMask && hasMasks
+            ? "Player mask: waiting for video…"
+            : "Player mask: hidden",
+        );
+        return;
+      }
+
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!vw || !vh) return;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const row = rowAtPlaybackTime(
+        video.currentTime,
+        videoFps,
+        maskRows,
+        maskFrameOffset,
       );
-      return;
-    }
+      if (!row?.mask_rle) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        lastPaintedFrameRef.current = null;
+        maybeAnnounce(
+          jerseyNumber > 0
+            ? `Player mask: no overlay at ${video.currentTime.toFixed(1)}s (jersey ${jerseyNumber})`
+            : `Player mask: no overlay at ${video.currentTime.toFixed(1)}s`,
+        );
+        return;
+      }
 
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    if (!vw || !vh) return;
+      const src = row.segment_source ?? "sam";
+      const statusMessage =
+        `Player mask: on at ${video.currentTime.toFixed(1)}s (frame ${row.frame}, ${src})` +
+        (jerseyNumber > 0 ? `, jersey ${jerseyNumber}` : "");
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+      if (lastPaintedFrameRef.current === row.frame) {
+        maybeAnnounce(statusMessage, row.frame);
+        return;
+      }
+      lastPaintedFrameRef.current = row.frame;
 
-    const row = rowAtPlaybackTime(video.currentTime, videoFps, maskRows);
-    if (!row?.mask_rle) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      lastPaintedFrameRef.current = null;
-      setMaskStatus(
-        jerseyNumber > 0
-          ? `Player mask: no overlay at ${video.currentTime.toFixed(1)}s (jersey ${jerseyNumber})`
-          : `Player mask: no overlay at ${video.currentTime.toFixed(1)}s`,
-      );
-      return;
-    }
+      const mh = Math.round(row.mask_rle.size[0]);
+      const mw = Math.round(row.mask_rle.size[1]);
 
-    if (lastPaintedFrameRef.current === row.frame) {
-      return;
-    }
-    lastPaintedFrameRef.current = row.frame;
+      if (canvas.width !== vw || canvas.height !== vh) {
+        canvas.width = vw;
+        canvas.height = vh;
+      }
 
-    const mh = Math.round(row.mask_rle.size[0]);
-    const mw = Math.round(row.mask_rle.size[1]);
+      const mask = decodeMaskRle(row.mask_rle);
+      if (mask.length !== mw * mh) {
+        ctx.clearRect(0, 0, vw, vh);
+        return;
+      }
 
-    if (canvas.width !== vw || canvas.height !== vh) {
-      canvas.width = vw;
-      canvas.height = vh;
-    }
+      drawMaskOnCanvasScaled(ctx, mask, mw, mh, vw, vh);
+      maybeAnnounce(statusMessage, row.frame);
+    },
+    [
+      announceMaskStatus,
+      maskRows,
+      showMask,
+      videoFps,
+      hasMasks,
+      jerseyNumber,
+      maskFrameOffset,
+    ],
+  );
 
-    const mask = decodeMaskRle(row.mask_rle);
-    if (mask.length !== mw * mh) {
-      ctx.clearRect(0, 0, vw, vh);
-      return;
-    }
-
-    drawMaskOnCanvasScaled(ctx, mask, mw, mh, vw, vh);
-    const src = row.segment_source ?? "sam";
-    setMaskStatus(
-      `Player mask: on at ${video.currentTime.toFixed(1)}s (frame ${row.frame}, ${src})` +
-        (jerseyNumber > 0 ? `, jersey ${jerseyNumber}` : ""),
-    );
-  }, [maskRows, showMask, videoFps, hasMasks, jerseyNumber]);
-
-  const schedulePaint = useCallback(() => {
-    if (rafRef.current !== null) return;
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = null;
-      paintMask();
-    });
-  }, [paintMask]);
+  const schedulePaint = useCallback(
+    (options?: { announce?: boolean }) => {
+      if (rafRef.current !== null) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        paintMask(options);
+      });
+    },
+    [paintMask],
+  );
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const onFrame = () => schedulePaint();
-    video.addEventListener("timeupdate", onFrame);
-    video.addEventListener("seeked", onFrame);
-    video.addEventListener("loadeddata", onFrame);
-    video.addEventListener("loadedmetadata", onFrame);
+    const onTimeUpdate = () => schedulePaint();
+    const onSeeked = () => schedulePaint({ announce: true });
+    const onLoaded = () => schedulePaint({ announce: true });
+    video.addEventListener("timeupdate", onTimeUpdate);
+    video.addEventListener("seeked", onSeeked);
+    video.addEventListener("loadeddata", onLoaded);
+    video.addEventListener("loadedmetadata", onLoaded);
 
     const ro =
       typeof ResizeObserver !== "undefined"
@@ -163,12 +219,12 @@ export function VideoUploadPanel({
         : null;
     ro?.observe(video);
 
-    schedulePaint();
+    schedulePaint({ announce: true });
     return () => {
-      video.removeEventListener("timeupdate", onFrame);
-      video.removeEventListener("seeked", onFrame);
-      video.removeEventListener("loadeddata", onFrame);
-      video.removeEventListener("loadedmetadata", onFrame);
+      video.removeEventListener("timeupdate", onTimeUpdate);
+      video.removeEventListener("seeked", onSeeked);
+      video.removeEventListener("loadeddata", onLoaded);
+      video.removeEventListener("loadedmetadata", onLoaded);
       ro?.disconnect();
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
@@ -179,7 +235,9 @@ export function VideoUploadPanel({
 
   useEffect(() => {
     lastPaintedFrameRef.current = null;
-    schedulePaint();
+    lastAnnouncedFrameRef.current = null;
+    lastAnnouncedStatusRef.current = "";
+    schedulePaint({ announce: true });
   }, [schedulePaint, trackingRows, showMask]);
 
   const openFilePicker = useCallback(() => {
@@ -265,14 +323,14 @@ export function VideoUploadPanel({
         tabIndex={-1}
       />
 
-      {previewUrl ? (
+      {playbackUrl ? (
         <div className={styles.previewContainer}>
           <figure className={styles.videoFigure}>
             <div className={styles.videoWrap}>
               <video
                 ref={videoRef}
                 className={styles.preview}
-                src={previewUrl}
+                src={playbackUrl}
                 controls
                 aria-describedby={
                   hasMasks ? "video-mask-status video-filename" : "video-filename"
@@ -288,9 +346,22 @@ export function VideoUploadPanel({
               )}
             </div>
             <figcaption id="video-filename" className={styles.fileName}>
-              {file?.name}
+              {showingAnnotated ? "Annotated analysis video" : file?.name}
             </figcaption>
           </figure>
+          {annotatedVideoUnavailableReason && (
+            <p className={styles.maskHint} role="status" aria-live="polite">
+              {annotatedVideoUnavailableReason}
+            </p>
+          )}
+          {showingAnnotated && (
+            <p className={styles.maskHint} role="status">
+              Track ellipses and ball marker are baked into this clip.
+              {hasMasks
+                ? " Player mask overlay still draws on top while you scrub."
+                : ""}
+            </p>
+          )}
           <p
             id="video-mask-status"
             className={styles.maskStatus}

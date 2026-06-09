@@ -5,6 +5,7 @@ import {
   analyzeVideo,
   checkHealth,
   fetchInsights,
+  getApiBaseUrl,
   type MobileSamHealth,
 } from "@/lib/api";
 import {
@@ -243,11 +244,15 @@ export function Dashboard() {
     setInsightsError(null);
 
     try {
+      const renderVideo =
+        process.env.NEXT_PUBLIC_RENDER_ANALYZE_VIDEO === "1" ||
+        process.env.NEXT_PUBLIC_RENDER_ANALYZE_VIDEO === "true";
       const response = await analyzeVideo(video, details, {
         calibrationName:
           uploadCalibrationReady && videoCalibrationKey
             ? videoCalibrationKey
             : null,
+        renderVideo,
       });
       if (runId !== analyzeRunRef.current) return;
       setResult(response);
@@ -363,19 +368,28 @@ export function Dashboard() {
                 </button>
               )}
             </div>
-            <button
-              type="button"
-              className={styles.analyzeButton}
-              onClick={handleAnalyze}
-              disabled={!canAnalyze}
+            <div
+              className={styles.analyzeAction}
+              tabIndex={blockers.length > 0 ? 0 : undefined}
+              role={blockers.length > 0 ? "group" : undefined}
+              aria-label={
+                blockers.length > 0 ? "Analyze unavailable" : undefined
+              }
               aria-describedby={
                 blockers.length > 0 ? "analyze-hint" : undefined
               }
-              aria-busy={isLoading}
             >
-              <AnalyzeIcon className={styles.analyzeButtonIcon} />
-              {isLoading ? "Analyzing…" : "Analyze"}
-            </button>
+              <button
+                type="button"
+                className={styles.analyzeButton}
+                onClick={handleAnalyze}
+                disabled={!canAnalyze}
+                aria-busy={isLoading}
+              >
+                <AnalyzeIcon className={styles.analyzeButtonIcon} />
+                {isLoading ? "Analyzing…" : "Analyze"}
+              </button>
+            </div>
           </div>
         </div>
         {blockers.length > 0 && (
@@ -422,6 +436,17 @@ export function Dashboard() {
                 : null
             }
             mobileSamHealth={mobileSamHealth}
+            annotatedVideoUrl={
+              result?.video_url
+                ? `${getApiBaseUrl()}${result.video_url}`
+                : null
+            }
+            annotatedVideoUnavailableReason={
+              result?.video_unavailable_reason ?? null
+            }
+            maskFrameOffset={
+              result?.video_url ? (result.video.frame_start ?? 0) : 0
+            }
           />
           <div className={styles.insightsRow}>
             <HeatMapPanel

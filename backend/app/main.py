@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import tempfile
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -36,7 +37,14 @@ from backend.app.schemas import (
     PlayerDetails,
 )
 from backend.app.upload_utils import max_upload_bytes, stream_upload_capped
-from backend.app.video_store import default_video_response, get_default_video_file
+from backend.app.video_store import (
+    cleanup_rendered_videos,
+    default_video_response,
+    get_default_video_file,
+    rendered_video_ready,
+    rendered_video_response,
+    rendered_videos_dir,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +56,55 @@ def _cors_origins() -> list[str]:
     return [o.strip() for o in raw.split(",") if o.strip()]
 
 
+def _parse_render_video_flag(raw: str | None) -> bool:
+    if raw is None:
+        return False
+    return raw.strip().lower() in ("true", "1", "yes", "on")
+
+
+def _allocate_rendered_output() -> tuple[Path, str]:
+    job_id = f"{uuid.uuid4().hex}.mp4"
+    out_dir = rendered_videos_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir / job_id, f"/api/videos/rendered/{job_id}"
+
+
+def _unlink_rendered(path: Path | None) -> None:
+    if path is not None and path.is_file():
+        path.unlink(missing_ok=True)
+
+
+def _finalize_analyze_response(
+    result: AnalyzeResponse,
+    *,
+    render_requested: bool,
+    rendered_path: Path | None,
+    video_url: str | None,
+) -> AnalyzeResponse:
+    if not render_requested:
+        return result
+    ready, reason = (
+        rendered_video_ready(rendered_path)
+        if rendered_path is not None
+        else (False, "annotated video was not created")
+    )
+    if ready and video_url:
+        return result.model_copy(update={"video_url": video_url})
+    _unlink_rendered(rendered_path)
+    return result.model_copy(
+        update={
+            "video_unavailable_reason": reason
+            or "annotated video unavailable",
+        }
+    )
+
+
 @asynccontextmanager
 async def _app_lifespan(_app: FastAPI):
     from backend.app.pipeline.segmentation import log_runtime_devices
 
     log_runtime_devices()
+    cleanup_rendered_videos()
     yield
 
 
@@ -108,6 +160,12 @@ def pitch_calibration(name: str = "testmatch2") -> dict:
 @app.get("/api/videos/default")
 def serve_default_video():
     return default_video_response()
+
+
+@app.get("/api/videos/rendered/{filename}")
+def serve_rendered_video(filename: str):
+    """Annotated analyze output (track ellipses, lock highlight, ball marker)."""
+    return rendered_video_response(filename)
 
 
 @app.get("/api/videos/default/info")
@@ -221,7 +279,10 @@ async def pitch_calibration_upload(
 
 
 @app.post("/api/analyze/default", response_model=AnalyzeResponse)
-async def analyze_default_video(details: str = Form(...)) -> AnalyzeResponse:
+async def analyze_default_video(
+    details: str = Form(...),
+    render_video: str = Form("false"),
+) -> AnalyzeResponse:
     """Analyze the server-hosted default demo video (no upload)."""
     try:
         player_details = PlayerDetails.model_validate_json(details)
@@ -231,22 +292,50 @@ async def analyze_default_video(details: str = Form(...)) -> AnalyzeResponse:
         raise HTTPException(status_code=422, detail="jerseyNumber must be between 1 and 99")
 
     video_path = str(get_default_video_file())
+    render = _parse_render_video_flag(render_video)
+    rendered_path: Path | None = None
+    video_url: str | None = None
+    if render:
+        rendered_path, video_url = _allocate_rendered_output()
     logger.info(
-        "Analyze started (default video): jersey=%s calibration=testmatch2",
+        "Analyze started (default video): jersey=%s calibration=testmatch2 "
+        "render_video=%s max_frames=%s",
         player_details.jerseyNumber,
+        render,
+        os.environ.get("MAX_FRAMES", "(default 5000)"),
     )
-    result = await asyncio.to_thread(
-        run_pipeline,
-        video_path,
-        player_details,
-        calibration_key="testmatch2",
-    )
-    logger.info(
-        "Analyze finished: frames=%s target_method=%s",
-        result.video.frames,
-        result.target.method,
-    )
-    return result
+    try:
+        result = await asyncio.to_thread(
+            run_pipeline,
+            video_path,
+            player_details,
+            calibration_key="testmatch2",
+            output_video_path=str(rendered_path) if rendered_path else None,
+        )
+        logger.info(
+            "Analyze finished: frames=%s target_method=%s",
+            result.video.frames,
+            result.target.method,
+        )
+        return _finalize_analyze_response(
+            result,
+            render_requested=render,
+            rendered_path=rendered_path,
+            video_url=video_url,
+        )
+    except HTTPException:
+        _unlink_rendered(rendered_path)
+        raise
+    except ValueError as exc:
+        _unlink_rendered(rendered_path)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        _unlink_rendered(rendered_path)
+        logger.exception("Analyze failed (default video)")
+        raise HTTPException(
+            status_code=500,
+            detail="Analysis failed. Check server logs for details.",
+        ) from exc
 
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)
@@ -254,6 +343,7 @@ async def analyze(
     video: UploadFile = File(...),
     details: str = Form(...),
     calibration_name: str | None = Form(None),
+    render_video: str = Form("false"),
 ) -> AnalyzeResponse:
     try:
         player_details = PlayerDetails.model_validate_json(details)
@@ -264,6 +354,8 @@ async def analyze(
 
     suffix = Path(video.filename or "upload.mp4").suffix or ".mp4"
     tmp_path: str | None = None
+    rendered_path: Path | None = None
+    video_url: str | None = None
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp_path = tmp.name
@@ -278,29 +370,44 @@ async def analyze(
         cal_key: str | None = None
         if calibration_name and calibration_name.strip():
             cal_key = normalize_calibration_name(calibration_name.strip())
+        render = _parse_render_video_flag(render_video)
+        if render:
+            rendered_path, video_url = _allocate_rendered_output()
         logger.info(
-            "Analyze started: upload=%s bytes jersey=%s calibration=%s",
+            "Analyze started: upload=%s bytes jersey=%s calibration=%s "
+            "render_video=%s max_frames=%s",
             written,
             player_details.jerseyNumber,
             cal_key or "(default)",
+            render,
+            os.environ.get("MAX_FRAMES", "(default 5000)"),
         )
         result = await asyncio.to_thread(
             run_pipeline,
             tmp_path,
             player_details,
             calibration_key=cal_key,
+            output_video_path=str(rendered_path) if rendered_path else None,
         )
         logger.info(
             "Analyze finished: frames=%s target_method=%s",
             result.video.frames,
             result.target.method,
         )
-        return result
+        return _finalize_analyze_response(
+            result,
+            render_requested=render,
+            rendered_path=rendered_path,
+            video_url=video_url,
+        )
     except HTTPException:
+        _unlink_rendered(rendered_path)
         raise
     except ValueError as exc:
+        _unlink_rendered(rendered_path)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
+        _unlink_rendered(rendered_path)
         logger.exception("Analyze failed")
         raise HTTPException(
             status_code=500,

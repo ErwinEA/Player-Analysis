@@ -206,6 +206,20 @@ python -m backend.cli /path/to/match.mp4 backend/sample-details.json --pretty
 
 A sample details file is at [backend/sample-details.json](sample-details.json).
 
+### Annotated analyze video (API)
+
+`POST /api/analyze` accepts optional form field `render_video=true`. When set, the pipeline writes an MP4 with track ellipses, lock highlight, and ball marker to `backend/data/rendered_videos/`. The JSON response includes `video_url` (relative path under `/api/videos/rendered/…`) when the file is browser-playable.
+
+**Requires `ffmpeg` on the server** (`brew install ffmpeg`). Without it, analyze still succeeds but `video_unavailable_reason` explains why no clip was attached.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RENDERED_VIDEO_MAX_AGE_HOURS` | `5` | TTL for rendered MP4s (cleaned on API startup) |
+
+Frontend: set `NEXT_PUBLIC_RENDER_ANALYZE_VIDEO=1` in `.env.local` to request rendering from the dashboard.
+
+`scripts/dev_backend.sh` sets `MAX_FRAMES=1500` for faster dev runs; raw `uvicorn` defaults to `5000` unless you export `MAX_FRAMES`.
+
 ### Mask overlay video (debug)
 
 Writes an MP4 with a green semi-transparent mask composited on every frame that has `mask_rle` in the pipeline output. Uses `run_pipeline(..., include_masks_in_response=True)` so masks are kept even when the HTTP API would strip them (e.g. uncertain lock).

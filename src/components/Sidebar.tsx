@@ -20,6 +20,7 @@ type SidebarProps = {
 };
 
 const JERSEY_HINT_ID = "player-jersey-hint";
+const JERSEY_ERROR_ID = "player-jersey-error";
 
 const KIT_PALETTE: { hex: HexColor; name: string }[] = [
   { hex: "#dc2626", name: "Red" },
@@ -56,6 +57,11 @@ export function Sidebar({ details, onChange }: SidebarProps) {
   );
 
   const jerseyInvalid = details.jerseyNumber <= 0 || details.jerseyNumber > 99;
+  const jerseyErrorMessage = jerseyInvalid
+    ? details.jerseyNumber <= 0
+      ? "Enter a jersey number from 1 to 99."
+      : "Jersey number must be 99 or less."
+    : null;
 
   return (
     <aside className={styles.sidebar} aria-label="Player configuration">
@@ -87,7 +93,12 @@ export function Sidebar({ details, onChange }: SidebarProps) {
               placeholder="e.g. 10"
               aria-required="true"
               aria-invalid={jerseyInvalid}
-              aria-describedby={JERSEY_HINT_ID}
+              aria-describedby={
+                jerseyInvalid
+                  ? `${JERSEY_HINT_ID} ${JERSEY_ERROR_ID}`
+                  : JERSEY_HINT_ID
+              }
+              aria-errormessage={jerseyInvalid ? JERSEY_ERROR_ID : undefined}
             />
             <span className={styles.inputSuffix} aria-hidden="true">
               #
@@ -97,6 +108,11 @@ export function Sidebar({ details, onChange }: SidebarProps) {
             Used to identify the player in video. Name and kit colors are
             optional helpers when the number is hard to read.
           </p>
+          {jerseyInvalid && jerseyErrorMessage && (
+            <p id={JERSEY_ERROR_ID} className={styles.fieldError} role="alert">
+              {jerseyErrorMessage}
+            </p>
+          )}
         </div>
 
         <div className={styles.field}>

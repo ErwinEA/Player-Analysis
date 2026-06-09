@@ -203,10 +203,20 @@
   outline-offset: 2px;
 }
 
+.analyzeAction {
+  display: inline-flex;
+}
+
+.analyzeAction:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 2px;
+  border-radius: 11px;
+}
+
 .analyzeButton:disabled {
-  background: rgba(148, 163, 184, 0.4);
-  color: #f1f5f9;
-  border-color: transparent;
+  background: rgba(148, 163, 184, 0.65);
+  color: #1e293b;
+  border-color: rgba(100, 116, 139, 0.35);
   box-shadow: none;
   cursor: not-allowed;
 }
@@ -221,7 +231,7 @@
   margin: 0;
   font-size: 12px;
   font-weight: 400;
-  color: var(--text-muted);
+  color: #334155;
   line-height: 1.5;
 }
 

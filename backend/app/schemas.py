@@ -39,6 +39,7 @@ class VideoMeta(BaseModel):
     frames: int
     duration_s: float
     frame_cap: int | None = None  # max frames processed (legacy default 5000)
+    frame_start: int = 0  # leading frames skipped (FRAME_START); offsets mask sync on rendered clip
 
 
 class TargetMatch(BaseModel):
@@ -172,6 +173,8 @@ class AnalyzeResponse(BaseModel):
     ball_samples: int | None = None
     events_unavailable_reason: str | None = None
     drive_contact_m: float | None = None
+    video_url: str | None = None
+    video_unavailable_reason: str | None = None
 
 
 class PitchFrameResponse(BaseModel):

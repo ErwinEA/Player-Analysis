@@ -5,6 +5,8 @@ export type VideoMeta = {
   frames: number;
   duration_s: number;
   frame_cap?: number | null;
+  /** Leading frames skipped by pipeline (FRAME_START); offsets mask sync on rendered clip. */
+  frame_start?: number;
 };
 
 export type MaskRle = {
@@ -111,4 +113,6 @@ export type AnalyzeResponse = {
   ball_samples?: number | null;
   events_unavailable_reason?: string | null;
   drive_contact_m?: number | null;
+  video_url?: string | null;
+  video_unavailable_reason?: string | null;
 };

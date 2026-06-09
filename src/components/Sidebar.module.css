@@ -76,7 +76,6 @@
 
 .optionalMark {
   font-weight: 500;
-  color: var(--text-faint);
   letter-spacing: 0.02em;
 }
 
@@ -127,11 +126,27 @@
   pointer-events: none;
 }
 
+.fieldHint,
+.optionalMark {
+  color: var(--text-muted);
+}
+
 .fieldHint {
   margin: 0;
   font-size: 11.5px;
   line-height: 1.5;
-  color: var(--text-faint);
+}
+
+.fieldError {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.input[aria-invalid="true"] {
+  border-color: rgba(220, 38, 38, 0.55);
 }
 
 .colorBlock {
@@ -233,7 +248,7 @@
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
-  color: #1e40af;
+  color: #1e3a8a;
 }
 
 @media (max-width: 900px) {

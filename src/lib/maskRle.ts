@@ -81,7 +81,7 @@ export function drawMaskOnCanvasScaled(
   const off = getScratchCanvas(maskW, maskH);
   const octx = off.getContext("2d");
   if (!octx) return;
-  drawMaskOnCanvas(octx, mask, maskW, maskH);
+  drawMaskOnCanvas(octx as CanvasRenderingContext2D, mask, maskW, maskH);
   ctx.clearRect(0, 0, destW, destH);
   ctx.drawImage(off as CanvasImageSource, 0, 0, destW, destH);
 }
@@ -97,9 +97,10 @@ export function rowAtPlaybackTime(
   currentTime: number,
   videoFps: number,
   maskRows: Row[],
+  frameOffset = 0,
 ): Row | undefined {
   if (!maskRows.length) return undefined;
-  const frame = Math.round(currentTime * videoFps);
+  const frame = Math.round(currentTime * videoFps) + frameOffset;
   const byFrame = maskRows.find((r) => r.frame === frame);
   if (byFrame?.mask_rle) return byFrame;
 

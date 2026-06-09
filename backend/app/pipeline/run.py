@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 import os
 from collections import Counter, defaultdict
+from pathlib import Path
+
 import cv2
 
 logger = logging.getLogger(__name__)
@@ -16,12 +18,14 @@ from backend.app.pipeline.ocr import JerseyOCR
 from backend.app.pipeline.reid import get_reid_extractor
 from backend.app.pipeline.scene_cut import SceneCutDetector
 from backend.app.pipeline.tracker import PlayerTracker
+from backend.app.pipeline.frame_overlay import TrackDraw, draw_tracks
 from backend.app.pipeline.heatmap import build_heatmap_from_rows
 from backend.app.pipeline.movement_stats import (
     compute_movement_stats_from_rows,
     foot_position_pixels,
 )
 from backend.app.pitch_api import resolve_calibration
+from backend.app.video_store import ensure_browser_playable_mp4, open_browser_video_writer
 from backend.app.pipeline.pitch_homography import PitchCalibration
 from backend.app.pipeline.segmentation import (
     SegmentationState,
@@ -512,8 +516,12 @@ def run_pipeline(
     *,
     calibration_key: str | None = None,
     include_masks_in_response: bool = False,
+    output_video_path: str | None = None,
 ) -> AnalyzeResponse:
-    """Run legacy analyze. Set include_masks_in_response=True for CLI mask export (keeps mask_rle when API would strip)."""
+    """Run legacy analyze. Set include_masks_in_response=True for CLI mask export (keeps mask_rle when API would strip).
+
+    When output_video_path is set, writes an annotated MP4 (track ellipses, lock highlight, ball marker).
+    """
     detector = get_person_detector()
     tracker = PlayerTracker()
     ocr = JerseyOCR()
@@ -531,6 +539,7 @@ def run_pipeline(
     if not cap.isOpened():
         raise ValueError(f"Could not open video: {video_path}")
 
+    video_writer: cv2.VideoWriter | None = None
     try:
         fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
@@ -589,6 +598,11 @@ def run_pipeline(
         epochs: list = []
         epoch_start_frame = frame_start
         ball_carry_track_id: int | None = None
+
+        if output_video_path:
+            video_writer = open_browser_video_writer(
+                output_video_path, fps, width, height
+            )
 
         while frame_idx < frame_start:
             ok, _ = cap.read()
@@ -649,6 +663,7 @@ def run_pipeline(
             this_frame_target_visible = False
             this_frame_seg_source = None
             frame_ocr_match: tuple[int, float] | None = None
+            ball_bbox: list[float] | None = None
 
             dets = detector(frame)
             tracks = tracker.update(dets, frame)
@@ -1038,6 +1053,8 @@ def run_pipeline(
                 if ball_detector.available:
                     anchor_px = this_frame_foot_px or last_anchor_foot_px
                     raw = ball_detector.detect(frame, near_px=anchor_px)
+                    if raw is not None:
+                        ball_bbox = [raw.x1, raw.y1, raw.x2, raw.y2]
                     if this_frame_foot_px is not None:
                         last_anchor_foot_px = this_frame_foot_px
                     if calibration is not None:
@@ -1076,6 +1093,30 @@ def run_pipeline(
                                 identification_type=ball_id_type,
                             )
                         )
+
+            if video_writer is not None:
+                frame_lock = matcher.lock
+                locked_id = frame_lock.track_id if frame_lock is not None else None
+                track_draws = [
+                    TrackDraw(
+                        track_id=tr["track_id"],
+                        bbox=tr["bbox"],
+                        confidence=tr.get("score", 1.0),
+                        label=(
+                            str(details.jerseyNumber)
+                            if locked_id == tr["track_id"] and details.jerseyNumber > 0
+                            else None
+                        ),
+                    )
+                    for tr in tracks
+                ]
+                annotated = draw_tracks(
+                    frame,
+                    track_draws,
+                    locked_track_id=locked_id,
+                    ball_bbox=ball_bbox,
+                )
+                video_writer.write(annotated)
 
             frame_idx += 1
             if frame_idx % 250 == 0:
@@ -1301,6 +1342,7 @@ def run_pipeline(
                 frames=frame_idx,
                 duration_s=round(duration_s, 3),
                 frame_cap=frame_cap if frame_cap < UNLIMITED_FRAME_CAP else None,
+                frame_start=frame_start,
             ),
             target=target,
             rows=api_rows,
@@ -1320,5 +1362,14 @@ def run_pipeline(
             drive_contact_m=drive_contact_m,
         )
     finally:
+        if video_writer is not None:
+            video_writer.release()
+            if output_video_path:
+                out = Path(output_video_path)
+                if not ensure_browser_playable_mp4(out):
+                    logger.warning(
+                        "Annotated video is not browser-playable (install ffmpeg): %s",
+                        out,
+                    )
         cap.release()
         _release_inference_memory()

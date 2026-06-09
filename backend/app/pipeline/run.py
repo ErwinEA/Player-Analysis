@@ -9,6 +9,7 @@ import cv2
 
 logger = logging.getLogger(__name__)
 
+from backend.app.pipeline.badminton_stats import build_badminton_stats
 from backend.app.pipeline.bbox import is_valid_bbox
 from backend.app.pipeline.color import jersey_color_score
 from backend.app.pipeline.debug_ocr import OcrDebug
@@ -1344,6 +1345,15 @@ def run_pipeline(
             if hm.sample_count == 0 and calibration_skipped_reason is None:
                 calibration_skipped_reason = "positions_out_of_bounds"
 
+        badminton_stats = None
+        badminton_stats_unavailable_reason: str | None = None
+        if details.sport == "badminton":
+            badminton_stats, badminton_stats_unavailable_reason = build_badminton_stats(
+                movement=movement,
+                target=target,
+                has_calibration=calibration is not None,
+            )
+
         return AnalyzeResponse(
             video=VideoMeta(
                 fps=round(fps, 3),
@@ -1370,6 +1380,8 @@ def run_pipeline(
             ball_samples=ball_samples,
             events_unavailable_reason=events_unavailable_reason,
             drive_contact_m=drive_contact_m,
+            badminton_stats=badminton_stats,
+            badminton_stats_unavailable_reason=badminton_stats_unavailable_reason,
         )
     finally:
         if video_writer is not None:

@@ -13,13 +13,18 @@ import {
   hasInsightsInput,
 } from "@/lib/insightsPayload";
 import type { AnalyzeResponse, MovementStats } from "@/types/analysis";
+import { badmintonMetricsFromResult, badmintonMetricsWarning } from "@/lib/badmintonMetrics";
 import {
+  EMPTY_BADMINTON_METRICS,
   EMPTY_METRICS,
+  type BadmintonMetrics,
   type GameplayAnalysis,
   type PlayerMetrics,
 } from "@/types/playerMetrics";
+import type { Sport } from "@/types/sport";
 import styles from "./Dashboard.module.css";
 import { Sidebar, type PlayerDetails } from "./Sidebar";
+import { SportToggle } from "./SportToggle";
 import { UploadAnalyzePanel } from "./UploadAnalyzePanel";
 import { HeatMapPanel } from "./HeatMapPanel";
 import { PlayerMetricsPanel } from "./PlayerMetricsPanel";
@@ -29,8 +34,10 @@ import { calibrationKeyFromFilename } from "@/lib/videoFrame";
 import { AnalyzeIcon, LogoIcon } from "./icons";
 
 const INITIAL_DETAILS: PlayerDetails = {
+  sport: "football",
   name: "",
   jerseyNumber: 0,
+  courtSide: "",
   primaryJerseyColor: "",
   secondaryJerseyColor: "",
   teamName: "",
@@ -40,8 +47,18 @@ type ApiStatus = "checking" | "online" | "offline";
 type AnalyzeState = "idle" | "loading" | "done" | "error";
 type InsightsState = "idle" | "loading" | "done" | "unavailable";
 
-function isDetailsValid(details: PlayerDetails): boolean {
+function isFootballDetailsValid(details: PlayerDetails): boolean {
   return details.jerseyNumber >= 1 && details.jerseyNumber <= 99;
+}
+
+function isBadmintonDetailsValid(details: PlayerDetails): boolean {
+  return Boolean(details.courtSide) && Boolean(details.primaryJerseyColor);
+}
+
+function isDetailsValid(sport: Sport, details: PlayerDetails): boolean {
+  return sport === "badminton"
+    ? isBadmintonDetailsValid(details)
+    : isFootballDetailsValid(details);
 }
 
 function metricsFromMovement(
@@ -132,6 +149,7 @@ function metricsForResult(result: AnalyzeResponse): {
 function getAnalyzeBlockers(
   apiStatus: ApiStatus,
   video: File | null,
+  sport: Sport,
   details: PlayerDetails,
 ): string[] {
   const blockers: string[] = [];
@@ -141,20 +159,28 @@ function getAnalyzeBlockers(
   }
   if (apiStatus !== "online") return blockers;
   if (!video) blockers.push("Upload a video");
-  if (details.jerseyNumber <= 0) blockers.push("Enter jersey number (1–99)");
-  else if (details.jerseyNumber > 99) {
+  if (sport === "badminton") {
+    if (!details.courtSide) blockers.push("Select court side");
+    if (!details.primaryJerseyColor) blockers.push("Pick shirt color");
+  } else if (details.jerseyNumber <= 0) {
+    blockers.push("Enter jersey number (1–99)");
+  } else if (details.jerseyNumber > 99) {
     blockers.push("Jersey number must be 99 or less");
   }
   return blockers;
 }
 
 export function Dashboard() {
+  const [sport, setSport] = useState<Sport>("football");
   const [details, setDetails] = useState<PlayerDetails>(INITIAL_DETAILS);
   const [video, setVideo] = useState<File | null>(null);
   const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
   const [analyzeState, setAnalyzeState] = useState<AnalyzeState>("idle");
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [metrics, setMetrics] = useState<PlayerMetrics>(EMPTY_METRICS);
+  const [badmintonMetrics, setBadmintonMetrics] = useState<BadmintonMetrics>(
+    EMPTY_BADMINTON_METRICS,
+  );
   const [metricsWarning, setMetricsWarning] = useState<string | null>(null);
   const [gameplayAnalysis, setGameplayAnalysis] =
     useState<GameplayAnalysis | null>(null);
@@ -205,6 +231,7 @@ export function Dashboard() {
     analyzeRunRef.current += 1;
     setResult(null);
     setMetrics(EMPTY_METRICS);
+    setBadmintonMetrics(EMPTY_BADMINTON_METRICS);
     setMetricsWarning(null);
     setGameplayAnalysis(null);
     setInsightsState("idle");
@@ -213,21 +240,40 @@ export function Dashboard() {
     setErrorMessage(null);
     setAnalyzeState("idle");
   }, [
+    sport,
     video,
     details.name,
     details.jerseyNumber,
+    details.courtSide,
     details.primaryJerseyColor,
     details.secondaryJerseyColor,
     details.teamName,
   ]);
 
-  const blockers = getAnalyzeBlockers(apiStatus, video, details);
+  const handleSportChange = useCallback((nextSport: Sport) => {
+    setSport(nextSport);
+    setDetails((current) => ({
+      ...current,
+      sport: nextSport,
+      jerseyNumber: nextSport === "badminton" ? 0 : current.jerseyNumber,
+      courtSide: nextSport === "football" ? "" : current.courtSide,
+    }));
+  }, []);
+
+  const handleDetailsChange = useCallback(
+    (next: PlayerDetails) => {
+      setDetails({ ...next, sport });
+    },
+    [sport],
+  );
+
+  const blockers = getAnalyzeBlockers(apiStatus, video, sport, details);
 
   const canAnalyze =
     apiStatus === "online" &&
     blockers.length === 0 &&
     analyzeState !== "loading" &&
-    isDetailsValid(details);
+    isDetailsValid(sport, details);
 
   const handleAnalyze = useCallback(async () => {
     if (!canAnalyze || !video) return;
@@ -237,6 +283,7 @@ export function Dashboard() {
     setErrorMessage(null);
     setResult(null);
     setMetrics(EMPTY_METRICS);
+    setBadmintonMetrics(EMPTY_BADMINTON_METRICS);
     setMetricsWarning(null);
     setGameplayAnalysis(null);
     setInsightsState("idle");
@@ -247,7 +294,8 @@ export function Dashboard() {
       const renderVideo =
         process.env.NEXT_PUBLIC_RENDER_ANALYZE_VIDEO === "1" ||
         process.env.NEXT_PUBLIC_RENDER_ANALYZE_VIDEO === "true";
-      const response = await analyzeVideo(video, details, {
+      const payload: PlayerDetails = { ...details, sport };
+      const response = await analyzeVideo(video, payload, {
         calibrationName:
           uploadCalibrationReady && videoCalibrationKey
             ? videoCalibrationKey
@@ -256,12 +304,17 @@ export function Dashboard() {
       });
       if (runId !== analyzeRunRef.current) return;
       setResult(response);
-      const { metrics: nextMetrics, warning } = metricsForResult(response);
-      setMetrics(nextMetrics);
-      setMetricsWarning(warning);
+      if (sport === "badminton") {
+        setBadmintonMetrics(badmintonMetricsFromResult(response));
+        setMetricsWarning(badmintonMetricsWarning(response));
+      } else {
+        const { metrics: nextMetrics, warning } = metricsForResult(response);
+        setMetrics(nextMetrics);
+        setMetricsWarning(warning);
+      }
       setAnalyzeState("done");
 
-      if (hasInsightsInput(response)) {
+      if (sport === "football" && hasInsightsInput(response)) {
         const insightsRunId = ++insightsRunRef.current;
         setInsightsState("loading");
         try {
@@ -309,6 +362,7 @@ export function Dashboard() {
     }
   }, [
     canAnalyze,
+    sport,
     video,
     details,
     uploadCalibrationReady,
@@ -349,6 +403,11 @@ export function Dashboard() {
             </div>
           </div>
           <div className={styles.headerControls}>
+            <SportToggle
+              sport={sport}
+              onChange={handleSportChange}
+              disabled={isLoading}
+            />
             <div className={styles.apiStatusGroup}>
               <div
                 className={`${styles.statusBadge} ${styles[`status_${apiStatus}`]}`}
@@ -368,23 +427,14 @@ export function Dashboard() {
                 </button>
               )}
             </div>
-            <div
-              className={styles.analyzeAction}
-              tabIndex={blockers.length > 0 ? 0 : undefined}
-              role={blockers.length > 0 ? "group" : undefined}
-              aria-label={
-                blockers.length > 0 ? "Analyze unavailable" : undefined
-              }
-              aria-describedby={
-                blockers.length > 0 ? "analyze-hint" : undefined
-              }
-            >
+            <div className={styles.analyzeAction}>
               <button
                 type="button"
                 className={styles.analyzeButton}
                 onClick={handleAnalyze}
                 disabled={!canAnalyze}
                 aria-busy={isLoading}
+                aria-describedby={blockers.length > 0 ? "analyze-hint" : undefined}
               >
                 <AnalyzeIcon className={styles.analyzeButtonIcon} />
                 {isLoading ? "Analyzing…" : "Analyze"}
@@ -412,9 +462,10 @@ export function Dashboard() {
         </p>
       )}
       <div className={styles.body}>
-        <Sidebar details={details} onChange={setDetails} />
+        <Sidebar sport={sport} details={details} onChange={handleDetailsChange} />
         <main id="main-content" className={styles.main}>
           <UploadAnalyzePanel
+            sport={sport}
             file={video}
             onFileChange={setVideo}
             onCalibrate={() => setCalibrationOpen(true)}
@@ -429,7 +480,13 @@ export function Dashboard() {
             }
             videoFps={result?.video.fps ?? 30}
             analyzeComplete={analyzeState === "done" && result != null}
-            jerseyNumber={details.jerseyNumber}
+            playerLabel={
+              sport === "badminton"
+                ? details.name.trim() || "selected player"
+                : details.jerseyNumber > 0
+                  ? `jersey ${details.jerseyNumber}`
+                  : undefined
+            }
             masksUnavailableReason={
               result?.masks_available === false
                 ? result.masks_unavailable_reason
@@ -450,6 +507,7 @@ export function Dashboard() {
           />
           <div className={styles.insightsRow}>
             <HeatMapPanel
+              sport={sport}
               isLoading={isLoading}
               hasResult={hasResult}
               heatmap={result?.heatmap}
@@ -462,20 +520,31 @@ export function Dashboard() {
               pitchTemplateKey={pitchTemplateKey}
             />
             <PlayerMetricsPanel
+              sport={sport}
               metrics={metrics}
+              badmintonMetrics={badmintonMetrics}
               isLoading={isLoading}
               hasResult={hasResult}
               metricsWarning={metricsWarning}
             />
           </div>
-          <GameplayAnalysisPanel
-            analysis={gameplayAnalysis}
-            isLoading={isLoading}
-            isInsightsLoading={insightsState === "loading"}
-            errorMessage={insightsError}
-            unavailableReason={insightsUnavailableReason}
-            hasResult={hasResult}
-          />
+          {sport === "football" ? (
+            <GameplayAnalysisPanel
+              analysis={gameplayAnalysis}
+              isLoading={isLoading}
+              isInsightsLoading={insightsState === "loading"}
+              errorMessage={insightsError}
+              unavailableReason={insightsUnavailableReason}
+              hasResult={hasResult}
+            />
+          ) : (
+            <GameplayAnalysisPanel
+              analysis={null}
+              isLoading={false}
+              unavailableReason="AI gameplay insights are available for football analysis only."
+              hasResult={hasResult}
+            />
+          )}
         </main>
       </div>
       <footer className={styles.footer}>
@@ -486,20 +555,21 @@ export function Dashboard() {
           <span className={styles.footerBrandText}>Neural Sports Analytics</span>
         </div>
         <nav className={styles.footerLinks} aria-label="Footer">
-          <a className={styles.footerLink} href="#">
+          <span className={styles.footerLinkMuted} aria-disabled="true">
             Privacy
-          </a>
-          <a className={styles.footerLink} href="#">
+          </span>
+          <span className={styles.footerLinkMuted} aria-disabled="true">
             Terms
-          </a>
-          <a className={styles.footerLink} href="#">
+          </span>
+          <span className={styles.footerLinkMuted} aria-disabled="true">
             Documentation
-          </a>
+          </span>
           <span className={styles.footerVersion}>v2.4.1</span>
         </nav>
       </footer>
       <PitchCalibrationModal
         open={calibrationOpen}
+        sport={sport}
         calibrationName={videoCalibrationKey ?? "upload"}
         videoFile={video}
         frameIndex={100}

@@ -288,9 +288,6 @@ async def analyze_default_video(
         player_details = PlayerDetails.model_validate_json(details)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Invalid details JSON: {exc}") from exc
-    if player_details.jerseyNumber <= 0:
-        raise HTTPException(status_code=422, detail="jerseyNumber must be between 1 and 99")
-
     video_path = str(get_default_video_file())
     render = _parse_render_video_flag(render_video)
     rendered_path: Path | None = None
@@ -349,9 +346,6 @@ async def analyze(
         player_details = PlayerDetails.model_validate_json(details)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Invalid details JSON: {exc}") from exc
-    if player_details.jerseyNumber <= 0:
-        raise HTTPException(status_code=422, detail="jerseyNumber must be between 1 and 99")
-
     suffix = Path(video.filename or "upload.mp4").suffix or ".mp4"
     tmp_path: str | None = None
     rendered_path: Path | None = None

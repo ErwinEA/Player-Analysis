@@ -95,6 +95,16 @@ export type InferredBallEvent = {
   possession_confidence?: string | null;
 };
 
+export type BadmintonStats = {
+  rally_wins: number | null;
+  total_rallies: number | null;
+  win_rate_pct: number | null;
+  court_coverage_km: number | null;
+  avg_rally_duration_s: number | null;
+  winners: number | null;
+  movement_speed_ms: number | null;
+};
+
 export type AnalyzeResponse = {
   video: VideoMeta;
   target: TargetMatch;
@@ -113,6 +123,8 @@ export type AnalyzeResponse = {
   ball_samples?: number | null;
   events_unavailable_reason?: string | null;
   drive_contact_m?: number | null;
+  badminton_stats?: BadmintonStats | null;
+  badminton_stats_unavailable_reason?: string | null;
   video_url?: string | null;
   video_unavailable_reason?: string | null;
 };

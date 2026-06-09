@@ -5,10 +5,12 @@ import { hasPitchCalibration } from "@/lib/api";
 import { calibrationKeyFromFilename } from "@/lib/videoFrame";
 import type { MobileSamHealth } from "@/lib/api";
 import type { Row } from "@/types/analysis";
+import type { Sport } from "@/types/sport";
 import { VideoUploadPanel } from "./VideoUploadPanel";
 import styles from "./UploadAnalyzePanel.module.css";
 
 type UploadAnalyzePanelProps = {
+  sport: Sport;
   file: File | null;
   onFileChange: (file: File | null) => void;
   onCalibrate: () => void;
@@ -17,7 +19,7 @@ type UploadAnalyzePanelProps = {
   trackingRows?: Row[] | null;
   videoFps?: number;
   analyzeComplete?: boolean;
-  jerseyNumber?: number;
+  playerLabel?: string;
   masksUnavailableReason?: string | null;
   mobileSamHealth?: MobileSamHealth | null;
   annotatedVideoUrl?: string | null;
@@ -26,6 +28,7 @@ type UploadAnalyzePanelProps = {
 };
 
 export function UploadAnalyzePanel({
+  sport,
   file,
   onFileChange,
   onCalibrate,
@@ -34,7 +37,7 @@ export function UploadAnalyzePanel({
   trackingRows = null,
   videoFps = 30,
   analyzeComplete = false,
-  jerseyNumber = 0,
+  playerLabel,
   masksUnavailableReason = null,
   mobileSamHealth = null,
   annotatedVideoUrl = null,
@@ -82,7 +85,7 @@ export function UploadAnalyzePanel({
         trackingRows={trackingRows}
         videoFps={videoFps}
         analyzeComplete={analyzeComplete}
-        jerseyNumber={jerseyNumber}
+        playerLabel={playerLabel}
         masksUnavailableReason={masksUnavailableReason}
         mobileSamHealth={mobileSamHealth}
         annotatedVideoUrl={annotatedVideoUrl}
@@ -95,7 +98,9 @@ export function UploadAnalyzePanel({
           aria-labelledby="upload-calibration-heading"
         >
           <h2 id="upload-calibration-heading" className={styles.promptTitle}>
-            Pitch layout for heat map
+            {sport === "badminton"
+              ? "Court layout for heat map"
+              : "Pitch layout for heat map"}
           </h2>
           {checkingCalibration ? (
             <p
@@ -111,9 +116,9 @@ export function UploadAnalyzePanel({
               className={styles.promptText}
               role="status"
             >
-              Pitch corners saved for <code>{calibrationKey}</code>. Re-run
-              analysis to refresh the heat map, or recalibrate if the camera
-              angle changed.
+              {sport === "badminton" ? "Court" : "Pitch"} corners saved for{" "}
+              <code>{calibrationKey}</code>. Re-run analysis to refresh the heat
+              map, or recalibrate if the camera angle changed.
             </p>
           ) : (
             <p
@@ -122,9 +127,11 @@ export function UploadAnalyzePanel({
               role="status"
               aria-live="polite"
             >
-              Before analyzing, open calibration and mark points around the
-              pitch outline on a frame with a clear wide view of the field.
-              Validate before save to check homography quality.
+              Before analyzing, open calibration and mark points around the{" "}
+              {sport === "badminton" ? "court" : "pitch"} outline on a frame
+              with a clear wide view of the{" "}
+              {sport === "badminton" ? "court" : "field"}. Validate before
+              save to check homography quality.
             </p>
           )}
           <button
@@ -133,7 +140,13 @@ export function UploadAnalyzePanel({
             onClick={onCalibrate}
             aria-describedby="upload-calibration-status"
           >
-            {calibrationReady ? "Recalibrate pitch" : "Calibrate pitch layout"}
+            {calibrationReady
+              ? sport === "badminton"
+                ? "Recalibrate court"
+                : "Recalibrate pitch"
+              : sport === "badminton"
+                ? "Calibrate court layout"
+                : "Calibrate pitch layout"}
           </button>
         </section>
       )}

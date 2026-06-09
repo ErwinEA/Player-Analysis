@@ -16,6 +16,24 @@ export const EMPTY_METRICS: PlayerMetrics = {
   driveContactM: null,
 };
 
+export type BadmintonMetrics = {
+  rallyWins: number | null;
+  winRatePct: number | null;
+  courtCoverageKm: number | null;
+  avgRallyDurationS: number | null;
+  winners: number | null;
+  movementSpeedMs: number | null;
+};
+
+export const EMPTY_BADMINTON_METRICS: BadmintonMetrics = {
+  rallyWins: null,
+  winRatePct: null,
+  courtCoverageKm: null,
+  avgRallyDurationS: null,
+  winners: null,
+  movementSpeedMs: null,
+};
+
 export type GameplayAnalysis = {
   summary: string | null;
 };

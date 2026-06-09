@@ -25,6 +25,39 @@ test.describe("Player Analysis dashboard", () => {
     ).toBeVisible();
   });
 
+  test("badminton mode uses court side and shirt color instead of jersey", async ({
+    page,
+  }) => {
+    await page.getByRole("radio", { name: "Badminton" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Player Selection", level: 2 }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Jersey number")).toHaveCount(0);
+    await expect(page.getByRole("radio", { name: "Near court" })).toBeVisible();
+
+    const analyze = page.getByRole("button", { name: "Analyze" });
+    await expect(analyze).toBeDisabled();
+    const hint = page.locator("#analyze-hint");
+    await expect(hint).toContainText(/Select court side/i);
+    await expect(hint).toContainText(/Pick shirt color/i);
+
+    await page.getByRole("radio", { name: "Near court" }).click();
+    await page.getByRole("button", { name: "Red" }).click();
+    await expect(hint).toContainText(/Upload a video/i);
+    await expect(hint).not.toContainText(/Select court side/i);
+    await expect(hint).not.toContainText(/Pick shirt color/i);
+  });
+
+  test("badminton metrics panel labels differ from football", async ({
+    page,
+  }) => {
+    await page.getByRole("radio", { name: "Badminton" }).click();
+    await expect(page.getByText("Rally wins")).toBeVisible();
+    await expect(page.getByText("Win rate")).toBeVisible();
+    await expect(page.getByText("Court coverage")).toBeVisible();
+    await expect(page.getByText("Goals")).toHaveCount(0);
+  });
+
   test("analyze is blocked until jersey and video are provided", async ({
     page,
   }) => {

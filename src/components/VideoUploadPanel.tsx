@@ -26,7 +26,7 @@ type VideoUploadPanelProps = {
   trackingRows?: Row[] | null;
   videoFps?: number;
   analyzeComplete?: boolean;
-  jerseyNumber?: number;
+  playerLabel?: string;
   masksUnavailableReason?: string | null;
   mobileSamHealth?: MobileSamHealth | null;
   annotatedVideoUrl?: string | null;
@@ -40,7 +40,7 @@ export function VideoUploadPanel({
   trackingRows = null,
   videoFps = 30,
   analyzeComplete = false,
-  jerseyNumber = 0,
+  playerLabel,
   masksUnavailableReason = null,
   mobileSamHealth = null,
   annotatedVideoUrl = null,
@@ -145,8 +145,8 @@ export function VideoUploadPanel({
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         lastPaintedFrameRef.current = null;
         maybeAnnounce(
-          jerseyNumber > 0
-            ? `Player mask: no overlay at ${video.currentTime.toFixed(1)}s (jersey ${jerseyNumber})`
+          playerLabel
+            ? `Player mask: no overlay at ${video.currentTime.toFixed(1)}s (${playerLabel})`
             : `Player mask: no overlay at ${video.currentTime.toFixed(1)}s`,
         );
         return;
@@ -155,7 +155,7 @@ export function VideoUploadPanel({
       const src = row.segment_source ?? "sam";
       const statusMessage =
         `Player mask: on at ${video.currentTime.toFixed(1)}s (frame ${row.frame}, ${src})` +
-        (jerseyNumber > 0 ? `, jersey ${jerseyNumber}` : "");
+        (playerLabel ? `, ${playerLabel}` : "");
 
       if (lastPaintedFrameRef.current === row.frame) {
         maybeAnnounce(statusMessage, row.frame);
@@ -186,7 +186,7 @@ export function VideoUploadPanel({
       showMask,
       videoFps,
       hasMasks,
-      jerseyNumber,
+      playerLabel,
       maskFrameOffset,
     ],
   );
@@ -340,8 +340,9 @@ export function VideoUploadPanel({
                 <canvas
                   ref={canvasRef}
                   className={styles.maskCanvas}
-                  role="img"
-                  aria-labelledby="video-mask-status"
+                  role={maskStatus ? "img" : undefined}
+                  aria-hidden={!maskStatus}
+                  aria-labelledby={maskStatus ? "video-mask-status" : undefined}
                 />
               )}
             </div>
@@ -385,7 +386,7 @@ export function VideoUploadPanel({
           {maskUnavailable && (
             <p className={styles.maskHint} role="status" aria-live="polite">
               {masksUnavailableReason ??
-                "Player mask overlay unavailable for this run — check jersey lock and re-run Analyze."}
+                "Player mask overlay unavailable for this run — check player lock and re-run Analyze."}
             </p>
           )}
           {hasMasks && (

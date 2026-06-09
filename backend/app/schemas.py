@@ -10,8 +10,10 @@ from backend.app.pipeline.mask_rle import MaskRle
 class PlayerDetails(BaseModel):
     """Mirrors PlayerDetails from src/components/Sidebar.tsx."""
 
+    sport: Literal["football", "badminton"] = "football"
     name: str = ""
-    jerseyNumber: int = Field(ge=1, le=99)
+    jerseyNumber: int = Field(default=0, ge=0, le=99)
+    courtSide: Literal["near", "far", ""] = ""
     primaryJerseyColor: str = ""
     secondaryJerseyColor: str = ""
     teamName: str = ""
@@ -24,6 +26,17 @@ class PlayerDetails(BaseModel):
         if not v.startswith("#") or len(v) not in (4, 7):
             raise ValueError("Jersey color must be a hex string like #ffffff")
         return v
+
+    @model_validator(mode="after")
+    def validate_sport_requirements(self) -> PlayerDetails:
+        if self.sport == "football" and self.jerseyNumber < 1:
+            raise ValueError("jerseyNumber must be between 1 and 99 for football")
+        if self.sport == "badminton":
+            if not self.courtSide:
+                raise ValueError("courtSide is required for badminton (near or far)")
+            if not self.primaryJerseyColor.strip():
+                raise ValueError("primaryJerseyColor is required for badminton")
+        return self
 
 
 def jersey_colors_configured(details: PlayerDetails) -> bool:
@@ -117,6 +130,16 @@ class PlayerEventCounts(BaseModel):
     Drive: int = 0
 
 
+class BadmintonStats(BaseModel):
+    rally_wins: int | None = None
+    total_rallies: int | None = None
+    win_rate_pct: float | None = None
+    court_coverage_km: float | None = None
+    avg_rally_duration_s: float | None = None
+    winners: int | None = None
+    movement_speed_ms: float | None = None
+
+
 class InferredBallEvent(BaseModel):
     frame: int
     kind: str
@@ -173,6 +196,8 @@ class AnalyzeResponse(BaseModel):
     ball_samples: int | None = None
     events_unavailable_reason: str | None = None
     drive_contact_m: float | None = None
+    badminton_stats: BadmintonStats | None = None
+    badminton_stats_unavailable_reason: str | None = None
     video_url: str | None = None
     video_unavailable_reason: str | None = None
 

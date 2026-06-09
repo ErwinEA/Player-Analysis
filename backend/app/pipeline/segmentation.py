@@ -47,6 +47,21 @@ def sam_warmup_frames() -> int:
     return max(1, int(os.environ.get("SAM_WARMUP_FRAMES", "1")))
 
 
+def sam_stride() -> int:
+    """Run MobileSAM every N visible frames after warmup (1 = every frame)."""
+    return max(1, int(os.environ.get("SAM_STRIDE", "1")))
+
+
+def should_run_sam_this_frame(frame_idx: int, last_sam_frame: int | None) -> bool:
+    """True when SAM should run on this frame (always on first post-warmup frame)."""
+    stride = sam_stride()
+    if stride <= 1:
+        return True
+    if last_sam_frame is None:
+        return True
+    return frame_idx - last_sam_frame >= stride
+
+
 def sam_warmup_miss_frames() -> int:
     """Consecutive invisible frames tolerated before SAM warmup counter resets."""
     return max(0, int(os.environ.get("SAM_WARMUP_MISS_FRAMES", "15")))
@@ -275,6 +290,26 @@ class SegmentResult:
     segment_source: SegmentSource
     mask_fallback: bool
     segment_track_id: int
+
+
+def segment_result_from_bbox(
+    bbox: list[float],
+    track_id: int,
+    width: int,
+    height: int,
+) -> SegmentResult:
+    """BBox foot position when SAM is skipped (SAM_STRIDE > 1)."""
+    fx, fy = foot_position_pixels(bbox)
+    return SegmentResult(
+        mask=None,
+        mask_rle=None,
+        foot_px=(fx, fy),
+        foot_nx=round(fx / width, 4) if width > 0 else 0.0,
+        foot_ny=round(fy / height, 4) if height > 0 else 0.0,
+        segment_source="bbox_fallback",
+        mask_fallback=True,
+        segment_track_id=track_id,
+    )
 
 
 @dataclass

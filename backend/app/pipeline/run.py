@@ -37,6 +37,8 @@ from backend.app.pipeline.segmentation import (
     run_segmentation_for_target,
     sam_enabled,
     sam_warmup_frames,
+    segment_result_from_bbox,
+    should_run_sam_this_frame,
 )
 from backend.app.schemas import (
     AnalyzeResponse,
@@ -555,6 +557,7 @@ def run_pipeline(
         track_frame_count: dict[int, int] = defaultdict(int)
         locked_at_frame: int | None = None
         segmentation_started_at_frame: int | None = None
+        last_sam_frame: int | None = None
         last_seg_bbox: list[float] | None = None
         frame_cap = _max_frames()
         frame_start = _frame_start()
@@ -640,6 +643,7 @@ def run_pipeline(
                 seg_state = SegmentationState()
                 locked_at_frame = None
                 segmentation_started_at_frame = None
+                last_sam_frame = None
                 last_seg_bbox = None
                 last_anchor_foot_px = None
                 if ball_detector is not None:
@@ -855,15 +859,21 @@ def run_pipeline(
                 )
                 if resolved is not None:
                     seg_tid, seg_bbox, is_reid_fb = resolved
-                    seg_result = run_segmentation_for_target(
-                        frame,
-                        seg_bbox,
-                        seg_tid,
-                        is_reid_fallback=is_reid_fb,
-                        width=width,
-                        height=height,
-                        segmenter=segmenter,
-                    )
+                    if should_run_sam_this_frame(frame_idx, last_sam_frame):
+                        seg_result = run_segmentation_for_target(
+                            frame,
+                            seg_bbox,
+                            seg_tid,
+                            is_reid_fallback=is_reid_fb,
+                            width=width,
+                            height=height,
+                            segmenter=segmenter,
+                        )
+                        last_sam_frame = frame_idx
+                    else:
+                        seg_result = segment_result_from_bbox(
+                            seg_bbox, seg_tid, width, height
+                        )
                     if segmentation_started_at_frame is None:
                         segmentation_started_at_frame = (
                             seg_state.segmentation_started_at_frame

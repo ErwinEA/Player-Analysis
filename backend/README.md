@@ -66,6 +66,7 @@ On first run, Ultralytics downloads `yolov8n.pt` automatically (unless you set `
 | `SAM_DEVICE` | `auto` | `mps`, `cuda`, `cpu`, or `auto` (no CPU fallback unless `SAM_ALLOW_CPU_FALLBACK=1`) |
 | `SAM_ALLOW_CPU_FALLBACK` | unset | Set `1` to retry MobileSAM on CPU after MPS/CUDA failure |
 | `SAM_WARMUP_FRAMES` | `3` | Frames on locked track after identity lock before SAM |
+| `SAM_STRIDE` | `1` | Run MobileSAM every N visible frames after warmup (`3` ≈ 3× less SAM work) |
 | `REID_FALLBACK_THRESH` | `0.65` | ReID match when ByteTrack loses lock `track_id` |
 | `SCENE_CUT_THRESH` | `0.65` | Grayscale-histogram correlation below this marks a hard broadcast cut |
 | `SCENE_CUT_SUPPRESS_FRAMES` | `45` | Frames after a cut where ball events are suppressed while the shot/lock stabilizes |

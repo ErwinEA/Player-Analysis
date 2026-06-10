@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getPitchTemplateUrl } from "@/lib/api";
+import { BADMINTON_COURT_IMAGE_PATH } from "@/lib/courtConfig";
 import type { HeatmapResult } from "@/types/analysis";
 import type { Sport } from "@/types/sport";
 import styles from "./HeatMapPanel.module.css";
@@ -69,14 +70,22 @@ export function HeatMapPanel({
   useEffect(() => {
     if (heatmap?.image_png_base64) {
       setPitchSrc((currentPitchSrc) => {
-        if (currentPitchSrc) URL.revokeObjectURL(currentPitchSrc);
+        if (currentPitchSrc?.startsWith("blob:")) {
+          URL.revokeObjectURL(currentPitchSrc);
+        }
         return null;
       });
       return;
     }
 
+    if (sport === "badminton") {
+      setPitchSrc(`${BADMINTON_COURT_IMAGE_PATH}?v=${pitchTemplateKey}`);
+      setPitchError(null);
+      return;
+    }
+
     let cancelled = false;
-    const url = `${getPitchTemplateUrl(calibrationName ?? undefined)}&v=${pitchTemplateKey}`;
+    const url = `${getPitchTemplateUrl(calibrationName ?? undefined, sport)}&v=${pitchTemplateKey}`;
 
     async function loadPitch() {
       try {
@@ -99,11 +108,11 @@ export function HeatMapPanel({
     return () => {
       cancelled = true;
     };
-  }, [heatmap, calibrationName, pitchTemplateKey]);
+  }, [heatmap, calibrationName, pitchTemplateKey, sport]);
 
   useEffect(() => {
     return () => {
-      if (pitchSrc) URL.revokeObjectURL(pitchSrc);
+      if (pitchSrc?.startsWith("blob:")) URL.revokeObjectURL(pitchSrc);
     };
   }, [pitchSrc]);
 
@@ -191,9 +200,11 @@ export function HeatMapPanel({
             <span>
               {calibrationSkippedReason === "positions_out_of_bounds"
                 ? `${surface === "court" ? "Court" : "Pitch"} calibration does not map players onto the ${surface} — recalibrate`
-                : calibrationSkippedReason === "size_mismatch"
-                  ? `${surface === "court" ? "Court" : "Pitch"} calibration size mismatch`
-                  : `No calibrated ${surface} overlay`}
+                : calibrationSkippedReason === "court_dimension_mismatch"
+                  ? "Court calibration uses football dimensions — recalibrate in Badminton mode"
+                  : calibrationSkippedReason === "size_mismatch"
+                    ? `${surface === "court" ? "Court" : "Pitch"} calibration size mismatch`
+                    : `No calibrated ${surface} overlay`}
             </span>
           ) : (
             <span>Runs after analyze</span>

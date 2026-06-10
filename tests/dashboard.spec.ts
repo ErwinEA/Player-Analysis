@@ -42,7 +42,10 @@ test.describe("Player Analysis dashboard", () => {
     await expect(hint).toContainText(/Pick shirt color/i);
 
     await page.getByRole("radio", { name: "Near court" }).click();
-    await page.getByRole("button", { name: "Red" }).click();
+    await page
+      .getByRole("radiogroup", { name: "Primary shirt color" })
+      .getByRole("radio", { name: "Red" })
+      .click();
     await expect(hint).toContainText(/Upload a video/i);
     await expect(hint).not.toContainText(/Select court side/i);
     await expect(hint).not.toContainText(/Pick shirt color/i);
@@ -52,9 +55,11 @@ test.describe("Player Analysis dashboard", () => {
     page,
   }) => {
     await page.getByRole("radio", { name: "Badminton" }).click();
-    await expect(page.getByText("Rally wins")).toBeVisible();
-    await expect(page.getByText("Win rate")).toBeVisible();
-    await expect(page.getByText("Court coverage")).toBeVisible();
+    await expect(page.getByText("Rally wins", { exact: true })).toBeVisible();
+    await expect(page.getByText("Win rate", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Court coverage", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("Goals")).toHaveCount(0);
   });
 

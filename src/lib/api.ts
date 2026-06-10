@@ -20,8 +20,13 @@ export function getApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? DEFAULT_API_URL;
 }
 
-export function getPitchTemplateUrl(name = "testmatch2"): string {
-  return `${getApiBaseUrl()}/api/pitch/template?name=${encodeURIComponent(name)}`;
+export function getPitchTemplateUrl(
+  name = "testmatch2",
+  sport?: "football" | "badminton",
+): string {
+  const params = new URLSearchParams({ name });
+  if (sport) params.set("sport", sport);
+  return `${getApiBaseUrl()}/api/pitch/template?${params}`;
 }
 
 export type MobileSamHealth = {
@@ -144,13 +149,19 @@ export type PitchCalibrationSaveResult = {
   warnings?: string[];
 };
 
-export async function previewPitchCalibration(payload: {
+export type PitchCalibrationPayload = {
   name: string;
   frame_index: number;
   image_boundary_points: number[][];
   image_width?: number;
   image_height?: number;
-}): Promise<PitchCalibrationPreviewResponse> {
+  pitch_length_m?: number;
+  pitch_width_m?: number;
+};
+
+export async function previewPitchCalibration(
+  payload: PitchCalibrationPayload,
+): Promise<PitchCalibrationPreviewResponse> {
   const res = await fetch(`${getApiBaseUrl()}/api/pitch/calibration/preview`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -160,12 +171,9 @@ export async function previewPitchCalibration(payload: {
   return res.json() as Promise<PitchCalibrationPreviewResponse>;
 }
 
-export async function savePitchCalibration(payload: {
-  name: string;
-  frame_index: number;
-  image_boundary_points: number[][];
-  image_corners?: number[][];
-}): Promise<PitchCalibrationSaveResult> {
+export async function savePitchCalibration(
+  payload: PitchCalibrationPayload & { image_corners?: number[][] },
+): Promise<PitchCalibrationSaveResult> {
   const res = await fetch(`${getApiBaseUrl()}/api/pitch/calibration`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -177,11 +185,7 @@ export async function savePitchCalibration(payload: {
 
 export async function saveLegacyPitchCalibration(
   video: File,
-  payload: {
-    name: string;
-    frame_index: number;
-    image_boundary_points: number[][];
-  },
+  payload: PitchCalibrationPayload,
 ): Promise<PitchCalibrationSaveResult> {
   const form = new FormData();
   form.append("name", payload.name);
@@ -190,6 +194,12 @@ export async function saveLegacyPitchCalibration(
     "image_corners",
     JSON.stringify(payload.image_boundary_points),
   );
+  if (payload.pitch_length_m != null) {
+    form.append("pitch_length_m", String(payload.pitch_length_m));
+  }
+  if (payload.pitch_width_m != null) {
+    form.append("pitch_width_m", String(payload.pitch_width_m));
+  }
   form.append("video", video);
   let res: Response;
   try {

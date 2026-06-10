@@ -23,6 +23,7 @@ import {
   MAX_BOUNDARY_POINTS,
   MIN_BOUNDARY_POINTS,
 } from "@/lib/pitchCalibration";
+import { courtDimensionsForSport } from "@/lib/courtConfig";
 import type { Sport } from "@/types/sport";
 import styles from "./PitchCalibrationModal.module.css";
 
@@ -450,6 +451,22 @@ export function PitchCalibrationModal({
     [points],
   );
 
+  const courtDims = useMemo(
+    () => courtDimensionsForSport(sport),
+    [sport],
+  );
+
+  const calibrationCourtFields = useMemo(
+    () =>
+      sport === "badminton"
+        ? {
+            pitch_length_m: courtDims.pitch_length_m,
+            pitch_width_m: courtDims.pitch_width_m,
+          }
+        : {},
+    [sport, courtDims],
+  );
+
   const handlePreview = async () => {
     if (points.length < MIN_BOUNDARY_POINTS) return;
     setPreviewing(true);
@@ -459,6 +476,7 @@ export function PitchCalibrationModal({
         name: calibrationName,
         frame_index: activeFrameIndex,
         image_boundary_points: boundaryPayload,
+        ...calibrationCourtFields,
       };
       if (uploadMode && frameData) {
         previewPayload.image_width = frameData.width;
@@ -489,12 +507,14 @@ export function PitchCalibrationModal({
           name: calibrationName,
           frame_index: activeFrameIndex,
           image_boundary_points: boundaryPayload,
+          ...calibrationCourtFields,
         });
       } else {
         await savePitchCalibration({
           name: calibrationName,
           frame_index: activeFrameIndex,
           image_boundary_points: boundaryPayload,
+          ...calibrationCourtFields,
         });
       }
       onSaved(calibrationName);
@@ -557,6 +577,9 @@ export function PitchCalibrationModal({
           {uploadMode
             ? ` Choose a wide, unobstructed view of the ${surface} before marking points.`
             : ` Frame ${activeFrameIndex} from the server default video.`}
+          {sport === "badminton"
+            ? " Save calibration while Badminton mode is selected so metre stats use the singles court (13.4 m × 6.1 m)."
+            : ""}
         </p>
         {uploadMode && videoDuration > 0 && (
           <div className={styles.framePicker}>

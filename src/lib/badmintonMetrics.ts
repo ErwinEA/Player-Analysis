@@ -40,25 +40,31 @@ export function badmintonMetricsFromResult(
 export function badmintonMetricsWarning(
   result: AnalyzeResponse,
 ): string | null {
+  if (result.calibration_skipped_reason === "court_dimension_mismatch") {
+    return "Court calibration was saved for football dimensions. Switch to Badminton, re-calibrate the court (13.4 m × 6.1 m), then re-run Analyze.";
+  }
   const reason = result.badminton_stats_unavailable_reason;
   if (reason === "no_calibration") {
     return "Rally stats need court calibration. Calibrate the court, then re-run Analyze.";
   }
   if (reason === "no_lock") {
-    return "Rally stats need a confident player lock via shirt color.";
+    return "Rally stats need a confident player lock via court side or shirt color.";
+  }
+  if (reason === "no_shuttle_weights") {
+    return "Rally stats need shuttle detection weights: add yolov8n_shuttle.pt to backend/weights (see backend/weights/README.md). Movement stats use tracking data.";
   }
   if (reason === "rally_detection_pending") {
-    return "Rally wins, win rate, rally duration, and winners need rally detection (coming soon). Movement stats use tracking data.";
+    return "No rallies detected in this clip — rally wins, win rate, duration, and winners are unavailable. Movement stats use tracking data.";
   }
   if (result.calibration_skipped_reason === "positions_out_of_bounds") {
     return "Court calibration is off: player positions fall outside the court. Recalibrate, then re-run Analyze.";
   }
   const method = result.target.method;
   if (method === "none" || result.target.track_id == null) {
-    return "Could not lock onto this player. Pick a clear shirt color and re-run Analyze.";
+    return "Could not lock onto this player. Pick court side and shirt color, then re-run Analyze.";
   }
   if (method === "color" || result.heatmap_source === "fallback_track") {
-    return "Player lock was uncertain. Treat movement and heat map as approximate.";
+    return "Player lock used shirt color only (court side was ambiguous). Treat movement and heat map as approximate.";
   }
   return null;
 }

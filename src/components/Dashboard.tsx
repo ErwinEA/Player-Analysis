@@ -12,7 +12,7 @@ import {
   buildInsightsPayload,
   hasInsightsInput,
 } from "@/lib/insightsPayload";
-import type { AnalyzeResponse, MovementStats } from "@/types/analysis";
+import type { AnalyzeResponse, MovementStats, Row } from "@/types/analysis";
 import { badmintonMetricsFromResult, badmintonMetricsWarning } from "@/lib/badmintonMetrics";
 import {
   EMPTY_BADMINTON_METRICS,
@@ -82,6 +82,27 @@ function isConfidentPlayerLock(result: AnalyzeResponse): boolean {
     method !== "color" &&
     result.heatmap_source !== "fallback_track"
   );
+}
+
+function trackingRowsForOverlay(
+  sport: Sport,
+  result: AnalyzeResponse | null,
+): Row[] | null {
+  if (!result?.rows?.length) return null;
+  if (result.target.track_id == null || result.target.method === "none") {
+    return null;
+  }
+  if (result.heatmap_source === "fallback_track") return null;
+  if (sport === "badminton") {
+    return result.rows;
+  }
+  if (
+    result.heatmap_source === "locked_target" &&
+    result.target.method !== "color"
+  ) {
+    return result.rows;
+  }
+  return null;
 }
 
 function metricsFromEvents(
@@ -292,6 +313,7 @@ export function Dashboard() {
 
     try {
       const renderVideo =
+        sport === "badminton" ||
         process.env.NEXT_PUBLIC_RENDER_ANALYZE_VIDEO === "1" ||
         process.env.NEXT_PUBLIC_RENDER_ANALYZE_VIDEO === "true";
       const payload: PlayerDetails = { ...details, sport };
@@ -471,13 +493,7 @@ export function Dashboard() {
             onCalibrate={() => setCalibrationOpen(true)}
             calibrationReady={uploadCalibrationReady}
             onCalibrationStatusChange={setUploadCalibrationReady}
-            trackingRows={
-              result?.heatmap_source === "locked_target" &&
-              result.target.method !== "none" &&
-              result.target.method !== "color"
-                ? result.rows
-                : null
-            }
+            trackingRows={trackingRowsForOverlay(sport, result)}
             videoFps={result?.video.fps ?? 30}
             analyzeComplete={analyzeState === "done" && result != null}
             playerLabel={

@@ -44,6 +44,27 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def shuttle_health() -> dict[str, object]:
+    """Health payload for /health (weights on disk; model loads on first badminton analyze)."""
+    weights = resolve_shuttle_weights()
+    if weights is None:
+        return {
+            "weights_found": False,
+            "weights_path": None,
+            "status": "unavailable",
+            "unavailable_reason": (
+                "Shuttle weights not found — place yolov8n_shuttle.pt in "
+                "backend/weights/ or set SHUTTLE_WEIGHTS"
+            ),
+        }
+    return {
+        "weights_found": True,
+        "weights_path": weights,
+        "status": "ok",
+        "unavailable_reason": None,
+    }
+
+
 def resolve_shuttle_weights(explicit: str | None = None) -> str | None:
     if explicit and Path(explicit).is_file():
         return explicit
@@ -105,13 +126,17 @@ class ShuttleDetector:
         if not self.available or self._model is None:
             return None
 
-        result = self._model.predict(
-            frame_bgr,
-            conf=self.conf,
-            iou=self.iou,
-            device=self._device,
-            verbose=False,
-        )[0]
+        try:
+            result = self._model.predict(
+                frame_bgr,
+                conf=self.conf,
+                iou=self.iou,
+                device=self._device,
+                verbose=False,
+            )[0]
+        except Exception as exc:
+            logger.warning("Shuttle detect failed: %s", exc)
+            return None
         if result.boxes is None or len(result.boxes) == 0:
             return None
 

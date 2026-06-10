@@ -635,16 +635,18 @@ def render_pitch_template(
 
 
 def badminton_court_asset_path() -> Path:
-    """AVIF court diagram (public/badminton-court-vector.avif)."""
+    """JPEG court diagram (public/badminton-court-vector.jpeg)."""
     root = Path(__file__).resolve().parents[3]
     for candidate in (
+        root / "public" / "badminton-court-vector.jpeg",
+        root / "badminton-court-vector.jpeg",
         root / "public" / "badminton-court-vector.avif",
         root / "badminton-court-vector.avif",
     ):
         if candidate.is_file():
             return candidate
     raise FileNotFoundError(
-        "Badminton court asset not found. Add public/badminton-court-vector.avif."
+        "Badminton court asset not found. Add public/badminton-court-vector.jpeg."
     )
 
 
@@ -654,7 +656,7 @@ def render_badminton_court_template(
     width_m: float = 6.1,
     pixels_per_meter: int = DEFAULT_PIXELS_PER_METER,
 ) -> np.ndarray:
-    """Load badminton-court-vector.avif, resized for heatmap / template API."""
+    """Load badminton-court-vector.jpeg, resized for heatmap / template API."""
     target_w = int(round(length_m * pixels_per_meter))
     target_h = int(round(width_m * pixels_per_meter))
     if target_w < 1 or target_h < 1:
@@ -669,8 +671,14 @@ def render_badminton_court_template(
 
 
 def is_badminton_court(length_m: float, width_m: float) -> bool:
-    """Heuristic: court dimensions match badminton singles scale."""
-    return length_m <= 14.0 and width_m <= 8.0
+    """True when dimensions match configured badminton court size."""
+    from backend.app.pipeline.sports.config import calibration_matches_sport
+
+    return calibration_matches_sport(
+        sport="badminton",
+        pitch_length_m=length_m,
+        pitch_width_m=width_m,
+    )
 
 
 def render_court_template(

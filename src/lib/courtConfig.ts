@@ -15,4 +15,4 @@ export function courtDimensionsForSport(sport: Sport): CourtDimensions {
 }
 
 /** Static top-down court diagram served from Next.js public/. */
-export const BADMINTON_COURT_IMAGE_PATH = "/badminton-court-vector.avif";
+export const BADMINTON_COURT_IMAGE_PATH = "/badminton-court-vector.jpeg";

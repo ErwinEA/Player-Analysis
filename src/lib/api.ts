@@ -46,9 +46,17 @@ export type OllamaHealth = {
   base_url: string;
 };
 
+export type ShuttleHealth = {
+  weights_found: boolean;
+  weights_path: string | null;
+  status: "ok" | "unavailable";
+  unavailable_reason: string | null;
+};
+
 export type HealthResponse = {
   status: string;
   mobile_sam: MobileSamHealth;
+  shuttle?: ShuttleHealth;
   ollama?: OllamaHealth;
 };
 

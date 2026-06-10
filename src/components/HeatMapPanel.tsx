@@ -201,7 +201,7 @@ export function HeatMapPanel({
               {calibrationSkippedReason === "positions_out_of_bounds"
                 ? `${surface === "court" ? "Court" : "Pitch"} calibration does not map players onto the ${surface} — recalibrate`
                 : calibrationSkippedReason === "court_dimension_mismatch"
-                  ? "Court calibration uses football dimensions — recalibrate in Badminton mode"
+                  ? "Court calibration uses football dimensions — click Calibrate court layout"
                   : calibrationSkippedReason === "size_mismatch"
                     ? `${surface === "court" ? "Court" : "Pitch"} calibration size mismatch`
                     : `No calibrated ${surface} overlay`}

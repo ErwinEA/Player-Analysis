@@ -60,8 +60,35 @@ def test_disambiguate_with_color_fallback():
         {"track_id": 1, "bbox": [100.0, 400.0, 200.0, 500.0]},
         {"track_id": 2, "bbox": [300.0, 420.0, 400.0, 520.0]},
     ]
+    color_scores = {2: [0.8, 0.85, 0.9, 0.88, 0.87]}
     tid, method = disambiguate_with_fallback(
-        tracks, "near", net_y, {2: [0.8, 0.9]}
+        tracks, "near", net_y, color_scores
     )
     assert tid == 2
     assert method == "color"
+
+
+def test_apply_color_lock_sets_method():
+    from backend.app.pipeline.matcher import TrackIdentityMatcher
+
+    matcher = TrackIdentityMatcher(target_jersey=0, target_name="")
+    lock = matcher.apply_color_lock(7, confidence=0.42)
+    assert lock.method == "color"
+    assert matcher.lock is not None
+    assert matcher.lock.method == "color"
+
+
+def test_color_fallback_rejects_weak_scores():
+    net_y = 360.0
+    tracks = [
+        {"track_id": 1, "bbox": [100.0, 400.0, 200.0, 500.0]},
+        {"track_id": 2, "bbox": [300.0, 420.0, 400.0, 520.0]},
+    ]
+    tid, method = disambiguate_with_fallback(
+        tracks,
+        "near",
+        net_y,
+        {2: [0.05, 0.06, 0.04, 0.05, 0.05]},
+    )
+    assert tid is None
+    assert method == "none"

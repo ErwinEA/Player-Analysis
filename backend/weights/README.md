@@ -24,12 +24,13 @@ check backend/weights/mobile_sam.pt
 check detection_test/weights/jersey_number_b0.pt
 check detection_test/weights/osnet_x1_0_soccernet.pth
 check detection_test/weights/yolov8n_ball.pt || check backend/weights/yolov8n_ball.pt
+check backend/weights/yolov8n_shuttle.pt
 ```
 
 **Optional API check** (start backend first, e.g. `./scripts/dev_backend.sh` from repo root):
 
 ```bash
-curl -s http://localhost:8000/health | python3 -m json.tool   # mobile_sam.status → ok
+curl -s http://localhost:8000/health | python3 -m json.tool   # mobile_sam.status → ok; shuttle.status → ok (badminton)
 ```
 
 | Missing | Effect |

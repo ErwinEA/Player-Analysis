@@ -41,7 +41,7 @@ export function badmintonMetricsWarning(
   result: AnalyzeResponse,
 ): string | null {
   if (result.calibration_skipped_reason === "court_dimension_mismatch") {
-    return "Court calibration was saved for football dimensions. Switch to Badminton, re-calibrate the court (13.4 m × 6.1 m), then re-run Analyze.";
+    return "Saved court calibration uses football dimensions (105 m × 68 m). Click Calibrate court layout, save corners for this video in Badminton mode (13.4 m × 6.1 m), then re-run Analyze.";
   }
   const reason = result.badminton_stats_unavailable_reason;
   if (reason === "no_calibration") {

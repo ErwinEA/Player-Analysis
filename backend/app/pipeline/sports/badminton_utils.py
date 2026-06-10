@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any, Literal
 
 from backend.app.pipeline.pitch_homography import PitchCalibration
@@ -9,7 +10,9 @@ from backend.app.pipeline.pitch_homography import PitchCalibration
 CourtSide = Literal["near", "far"]
 RallyState = Literal["IDLE", "LIVE", "END"]
 
-_GAP_BUDGET_DEFAULT = 22
+_COLOR_LOCK_THRESHOLD = float(os.environ.get("COLOR_LOCK_THRESHOLD", "0.15"))
+_COLOR_MIN_FLOOR = float(os.environ.get("COLOR_MATCH_MIN", "0.05"))
+_COLOR_MIN_SAMPLES = 5
 
 
 def centroid_y(bbox: list[float]) -> float:
@@ -36,7 +39,10 @@ def disambiguate_by_court_side(
     *,
     min_tracks: int = 2,
 ) -> int | None:
-    """Return track_id on the selected court side when both players are visible."""
+    """Return track_id on the selected court side when both players are visible.
+
+    MVP: requires exactly one mature track on the chosen side (singles, both visible).
+    """
     if len(tracks) < min_tracks or not court_side:
         return None
 
@@ -58,16 +64,19 @@ def disambiguate_by_court_side(
 
 
 def best_color_track_id(color_scores: dict[int, list[float]]) -> int | None:
-    """Track with highest average shirt-color score."""
+    """Track with highest average shirt-color score (matcher color-lock thresholds)."""
     best_id: int | None = None
     best_avg = 0.0
+    min_avg = max(_COLOR_LOCK_THRESHOLD, _COLOR_MIN_FLOOR)
     for track_id, scores in color_scores.items():
-        if not scores:
+        if len(scores) < _COLOR_MIN_SAMPLES:
             continue
         avg = sum(scores) / len(scores)
         if avg > best_avg:
             best_id = track_id
             best_avg = avg
+    if best_id is None or best_avg < min_avg:
+        return None
     return best_id
 
 

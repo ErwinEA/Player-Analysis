@@ -318,10 +318,7 @@ export function Dashboard() {
         process.env.NEXT_PUBLIC_RENDER_ANALYZE_VIDEO === "true";
       const payload: PlayerDetails = { ...details, sport };
       const response = await analyzeVideo(video, payload, {
-        calibrationName:
-          uploadCalibrationReady && videoCalibrationKey
-            ? videoCalibrationKey
-            : null,
+        calibrationName: videoCalibrationKey,
         renderVideo,
       });
       if (runId !== analyzeRunRef.current) return;
@@ -529,7 +526,7 @@ export function Dashboard() {
               heatmap={result?.heatmap}
               heatmapSource={result?.heatmap_source}
               calibrationSkippedReason={result?.calibration_skipped_reason}
-              frameCap={result?.video.frame_cap ?? 5000}
+              frameCap={result?.video.frame_cap ?? 6000}
               calibrationName={
                 result?.calibration_name ?? videoCalibrationKey
               }

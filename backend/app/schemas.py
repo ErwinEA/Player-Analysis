@@ -234,6 +234,15 @@ class PitchCalibrationSaveRequest(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def court_dims_pair(self) -> PitchCalibrationSaveRequest:
+        length_m, width_m = self.pitch_length_m, self.pitch_width_m
+        if (length_m is None) != (width_m is None):
+            raise ValueError(
+                "pitch_length_m and pitch_width_m must both be set or both omitted."
+            )
+        return self
+
+    @model_validator(mode="after")
     def require_calibration_points(self) -> PitchCalibrationSaveRequest:
         from backend.app.pipeline.pitch_homography import (
             MAX_BOUNDARY_POINTS,

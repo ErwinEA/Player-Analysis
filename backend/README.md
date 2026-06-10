@@ -37,7 +37,7 @@ On first run, Ultralytics downloads `yolov8n.pt` automatically (unless you set `
 | `TRACK_LOW_THRESH` | `0.1` | ByteTrack second-stage threshold; warn if `DET_CONF` is higher |
 | `TRACK_MIN_AGE` | `3` | Frames before a track is analyzed for OCR / included in output |
 | `OCR_EVERY` | `5` | Run OCR every N frames (OCR is slow) |
-| `MAX_FRAMES` | `5000` | Cap frames through detection/tracking (max 5000; invalid/`0` → 5000) |
+| `MAX_FRAMES` | `6000` | Cap frames through detection/tracking (max 6000; invalid/`0` → 6000) |
 | `MAX_UPLOAD_MB` | `4096` | Max legacy video upload size in megabytes (4 GB) |
 | `CORS_ALLOW_LOCAL_REGEX` | `1` | Allow localhost/127.0.0.1 on any port (set `0` in production) |
 | `OCR_GPU` | `0` | Set to `1` to run EasyOCR on a CUDA GPU |
@@ -223,7 +223,7 @@ A sample details file is at [backend/sample-details.json](sample-details.json).
 
 Frontend: set `NEXT_PUBLIC_RENDER_ANALYZE_VIDEO=1` in `.env.local` to request rendering from the dashboard.
 
-`scripts/dev_backend.sh` sets `MAX_FRAMES=1500` for faster dev runs; raw `uvicorn` defaults to `5000` unless you export `MAX_FRAMES`.
+`scripts/dev_backend.sh` sets `MAX_FRAMES=6000`; raw `uvicorn` uses the same default unless you export `MAX_FRAMES`.
 
 ### Mask overlay video (debug)
 

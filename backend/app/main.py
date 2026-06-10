@@ -24,6 +24,7 @@ from backend.app.pitch_api import (
 )
 from backend.app.pipeline.pitch_homography import default_calibration_dir
 from backend.app.pipeline.run import run_pipeline
+from backend.app.pipeline.badminton.shuttle_detector import shuttle_health
 from backend.app.pipeline.segmentation import mobile_sam_health
 from backend.app.pipeline.insights import generate_insights, ollama_health
 from backend.app.schemas import (
@@ -49,6 +50,20 @@ from backend.app.video_store import (
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CORS = "http://localhost:3000,http://127.0.0.1:3000"
+
+
+def _configure_app_logging() -> None:
+    """Ensure pipeline INFO logs (YOLO/SAM load, analyze progress) reach the terminal."""
+    fmt = logging.Formatter("%(levelname)s:%(name)s:%(message)s")
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    if not root.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(fmt)
+        root.addHandler(handler)
+    for name in ("backend", "backend.app", "ultralytics"):
+        child = logging.getLogger(name)
+        child.setLevel(logging.INFO)
 
 
 def _cors_origins() -> list[str]:
@@ -103,7 +118,11 @@ def _finalize_analyze_response(
 async def _app_lifespan(_app: FastAPI):
     from backend.app.pipeline.segmentation import log_runtime_devices
 
+    _configure_app_logging()
+    from backend.app.pipeline.run import _max_frames
+
     log_runtime_devices()
+    logger.info("MAX_FRAMES cap: %s", _max_frames())
     cleanup_rendered_videos()
     yield
 
@@ -121,7 +140,11 @@ _cors_kwargs: dict = {
     "allow_headers": ["*"],
 }
 if os.environ.get("CORS_ALLOW_LOCAL_REGEX", "1").strip() not in ("0", "false", "no"):
-    _cors_kwargs["allow_origin_regex"] = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
+    # localhost, loopback, and common LAN dev URLs (Next.js "Network" link)
+    _cors_kwargs["allow_origin_regex"] = (
+        r"http://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?"
+    )
+
 
 app.add_middleware(CORSMiddleware, **_cors_kwargs)
 @app.get("/")
@@ -139,7 +162,12 @@ def root() -> dict[str, str]:
 def health() -> dict[str, object]:
     sam = mobile_sam_health()
     top_status = "error" if sam.get("status") == "error" else "ok"
-    return {"status": top_status, "mobile_sam": sam, "ollama": ollama_health()}
+    return {
+        "status": top_status,
+        "mobile_sam": sam,
+        "shuttle": shuttle_health(),
+        "ollama": ollama_health(),
+    }
 
 
 @app.post("/api/insights", response_model=InsightsResponse)
@@ -305,7 +333,7 @@ async def analyze_default_video(
         "render_video=%s max_frames=%s",
         player_details.jerseyNumber,
         render,
-        os.environ.get("MAX_FRAMES", "(default 5000)"),
+        os.environ.get("MAX_FRAMES", "(default 6000)"),
     )
     try:
         result = await asyncio.to_thread(
@@ -348,6 +376,10 @@ async def analyze(
     calibration_name: str | None = Form(None),
     render_video: str = Form("false"),
 ) -> AnalyzeResponse:
+    logger.info(
+        "Analyze request received (upload=%s); streaming body…",
+        video.filename or "upload.mp4",
+    )
     try:
         player_details = PlayerDetails.model_validate_json(details)
     except Exception as exc:
@@ -380,13 +412,14 @@ async def analyze(
             player_details.jerseyNumber,
             cal_key or "(default)",
             render,
-            os.environ.get("MAX_FRAMES", "(default 5000)"),
+            os.environ.get("MAX_FRAMES", "(default 6000)"),
         )
         result = await asyncio.to_thread(
             run_pipeline,
             tmp_path,
             player_details,
             calibration_key=cal_key,
+            upload_filename=video.filename,
             output_video_path=str(rendered_path) if rendered_path else None,
         )
         logger.info(

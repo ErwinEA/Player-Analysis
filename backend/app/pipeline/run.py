@@ -69,8 +69,8 @@ def _track_min_age() -> int:
 
 
 # Legacy pipeline cap: detection + tracking run on at most this many frames.
-DEFAULT_MAX_FRAMES = 5000
-MAX_FRAMES_ENV_CAP = 5000
+DEFAULT_MAX_FRAMES = 6000
+MAX_FRAMES_ENV_CAP = 6000
 UNLIMITED_FRAME_CAP = 10_000_000
 
 
@@ -164,10 +164,16 @@ def _calibration_matches_video(
 def _resolve_pitch_calibration(
     *,
     calibration_key: str | None,
+    upload_filename: str | None = None,
 ) -> tuple[PitchCalibration | None, str | None]:
     from backend.app.pitch_api import calibration_keys_for_run
 
-    return resolve_calibration(*calibration_keys_for_run(explicit_key=calibration_key))
+    return resolve_calibration(
+        *calibration_keys_for_run(
+            explicit_key=calibration_key,
+            upload_filename=upload_filename,
+        )
+    )
 
 
 def _ball_events_enabled() -> bool:
@@ -523,6 +529,7 @@ def run_pipeline(
     details: PlayerDetails,
     *,
     calibration_key: str | None = None,
+    upload_filename: str | None = None,
     include_masks_in_response: bool = False,
     output_video_path: str | None = None,
 ) -> AnalyzeResponse:
@@ -583,6 +590,7 @@ def run_pipeline(
         calibration_skipped_reason: str | None = None
         calibration, matched_cal_name = _resolve_pitch_calibration(
             calibration_key=calibration_key,
+            upload_filename=upload_filename,
         )
         if calibration is not None and not _calibration_matches_video(
             calibration, width, height
@@ -590,18 +598,16 @@ def run_pipeline(
             calibration_skipped_reason = "size_mismatch"
             calibration = None
             matched_cal_name = None
-        if (
-            is_badminton
-            and calibration is not None
-            and not calibration_matches_sport(
-                sport="badminton",
+        if calibration is not None:
+            expected_sport = "badminton" if is_badminton else "football"
+            if not calibration_matches_sport(
+                sport=expected_sport,
                 pitch_length_m=calibration.pitch_length_m,
                 pitch_width_m=calibration.pitch_width_m,
-            )
-        ):
-            calibration_skipped_reason = "court_dimension_mismatch"
-            calibration = None
-            matched_cal_name = None
+            ):
+                calibration_skipped_reason = "court_dimension_mismatch"
+                calibration = None
+                matched_cal_name = None
 
         ball_detector = None
         ball_states: list = []
@@ -621,21 +627,23 @@ def run_pipeline(
         badminton_rally_state = "IDLE"
         shuttle_detector = None
         rally_tracker = None
+        badminton_net_y = height / 2.0
+        shuttle_stride = max(1, int(os.environ.get("SHUTTLE_STRIDE", "1")))
         if is_badminton:
             from backend.app.pipeline.badminton.shuttle_detector import ShuttleDetector
 
+            if calibration is not None:
+                from backend.app.pipeline.sports.badminton_utils import net_line_y_px
+
+                try:
+                    badminton_net_y = net_line_y_px(calibration)
+                except ValueError:
+                    pass
             shuttle_detector = ShuttleDetector()
             if shuttle_detector.available:
                 from backend.app.pipeline.badminton.rally_tracker import RallyTracker
-                from backend.app.pipeline.sports.badminton_utils import net_line_y_px
 
-                net_y_for_rally = height / 2.0
-                if calibration is not None:
-                    try:
-                        net_y_for_rally = net_line_y_px(calibration)
-                    except ValueError:
-                        pass
-                rally_tracker = RallyTracker(net_y_px=net_y_for_rally, fps=fps)
+                rally_tracker = RallyTracker(net_y_px=badminton_net_y, fps=fps)
         # Lock windows bounded by scene cuts; archived (not discarded) on each cut so
         # the best/longest epoch is analysed instead of whatever happens to be last.
         epochs: list = []
@@ -694,6 +702,11 @@ def run_pipeline(
                 target_samples = []
                 ball_carry_track_id = None
                 last_known_lock_track_id = None
+                if rally_tracker is not None:
+                    from backend.app.pipeline.badminton.rally_tracker import RallyTracker
+
+                    rally_tracker = RallyTracker(net_y_px=badminton_net_y, fps=fps)
+                    badminton_rally_state = "IDLE"
                 logger.info("Scene cut at frame %s — tracker/lock reset", frame_idx)
 
             skip_ball = scene_detector.is_suppressed
@@ -817,14 +830,6 @@ def run_pipeline(
                                     seg_state.record_visible_frame(frame_idx)
                             elif matcher.lock is not None:
                                 matcher.maybe_upgrade_lock(track_id)
-                    elif is_badminton:
-                        new_lock = matcher.try_acquire_lock()
-                        if new_lock is not None:
-                            if locked_at_frame is None:
-                                locked_at_frame = frame_idx
-                            seg_state.acquire_lock(new_lock.track_id)
-                            if track_id == new_lock.track_id:
-                                seg_state.record_visible_frame(frame_idx)
 
                 player = (
                     details.jerseyNumber
@@ -878,14 +883,20 @@ def run_pipeline(
                         matcher.color_scores,
                     )
                     if tid is not None:
-                        matcher.apply_court_side_lock(tid)
+                        if _lock_hint == "color":
+                            scores = matcher.color_scores.get(tid, [])
+                            conf = sum(scores) / len(scores) if scores else 0.0
+                            matcher.apply_color_lock(tid, confidence=conf)
+                        else:
+                            matcher.apply_court_side_lock(tid)
                         if locked_at_frame is None:
                             locked_at_frame = frame_idx
                         seg_state.acquire_lock(tid)
                         seg_state.record_visible_frame(frame_idx)
                         last_known_lock_track_id = tid
                         logger.info(
-                            "Badminton court-side lock: track=%s frame=%s side=%s",
+                            "Badminton %s lock: track=%s frame=%s side=%s",
+                            _lock_hint,
                             tid,
                             frame_idx,
                             court_side,
@@ -1052,7 +1063,9 @@ def run_pipeline(
                         )
                         this_frame_target_visible = True
                         this_frame_seg_source = seg_result.segment_source
-                elif last_seg_bbox is not None and details.jerseyNumber > 0:
+                elif last_seg_bbox is not None and (
+                    details.jerseyNumber > 0 or is_badminton
+                ):
                     # Target was not positively located this frame (no jersey/kit/ReID
                     # match). Continue the trajectory from the last good bbox, but DO NOT
                     # segment: prompting MobileSAM with a stale box segments whatever now
@@ -1200,9 +1213,10 @@ def run_pipeline(
 
             shuttle_px_frame: tuple[float, float] | None = None
             if rally_tracker is not None and shuttle_detector is not None:
-                shuttle_det = shuttle_detector.detect(frame)
-                if shuttle_det is not None:
-                    shuttle_px_frame = shuttle_det.center_px
+                if shuttle_stride <= 1 or frame_idx % shuttle_stride == 0:
+                    shuttle_det = shuttle_detector.detect(frame)
+                    if shuttle_det is not None:
+                        shuttle_px_frame = shuttle_det.center_px
                 locked_foot_px: tuple[float, float] | None = None
                 if matcher.lock is not None:
                     for tr in tracks:

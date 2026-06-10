@@ -16,9 +16,10 @@ from backend.app.pipeline.pitch_homography import (
     build_calibration_with_diagnostics,
     default_calibration_dir,
     load_calibration,
-    render_pitch_template,
+    render_court_template,
     save_calibration,
 )
+from backend.app.pipeline.sports.config import court_dimensions
 from backend.app.schemas import (
     PitchCalibrationPreviewResponse,
     PitchCalibrationSaveRequest,
@@ -147,29 +148,49 @@ def resolve_calibration(*names: str | None):
     return None, None
 
 
-def get_pitch_template_file(name: str = "testmatch2") -> Path:
+def _template_dims_for_request(
+    name: str,
+    *,
+    sport: str | None = None,
+) -> tuple[float, float]:
+    cal_path = _calibration_path(_validate_name(name))
+    if cal_path.is_file():
+        cal = load_calibration(cal_path)
+        return cal.pitch_length_m, cal.pitch_width_m
+    if sport and sport.strip().lower() == "badminton":
+        return court_dimensions("badminton")
+    return court_dimensions("football")
+
+
+def get_pitch_template_file(
+    name: str = "testmatch2",
+    *,
+    sport: str | None = None,
+) -> Path:
     name = _validate_name(name)
     path = _template_path(name)
-    if path.is_file():
-        return path
-    # Generate on demand if calibration exists but template PNG missing
+    length_m, width_m = _template_dims_for_request(name, sport=sport)
     cal_path = _calibration_path(name)
-    if cal_path.is_file():
-        img = render_pitch_template(
-            length_m=load_calibration(cal_path).pitch_length_m,
-            width_m=load_calibration(cal_path).pitch_width_m,
-        )
+    # Regenerate when missing or sport override disagrees with stored football template
+    if path.is_file() and sport != "badminton":
+        return path
+    if cal_path.is_file() or sport == "badminton":
         import cv2
 
+        img = render_court_template(length_m=length_m, width_m=width_m)
         path.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(path), img)
         return path
     raise HTTPException(status_code=404, detail=f"Pitch template not found for '{name}'")
 
 
-def pitch_template_response(name: str = "testmatch2") -> FileResponse:
-    path = get_pitch_template_file(name)
-    return FileResponse(path, media_type="image/png", filename=f"{name}_pitch.png")
+def pitch_template_response(
+    name: str = "testmatch2",
+    *,
+    sport: str | None = None,
+) -> FileResponse:
+    path = get_pitch_template_file(name, sport=sport)
+    return FileResponse(path, media_type="image/png", filename=f"{name}_court.png")
 
 
 def get_pitch_calibration(name: str = "testmatch2") -> dict:
@@ -260,6 +281,13 @@ def _diagnostics_to_preview_response(
     )
 
 
+def _court_dims_from_request(body: PitchCalibrationSaveRequest) -> tuple[float, float]:
+    """Resolve court dimensions; default to football when omitted."""
+    if body.pitch_length_m is not None and body.pitch_width_m is not None:
+        return float(body.pitch_length_m), float(body.pitch_width_m)
+    return court_dimensions("football")
+
+
 def _calibration_from_request(
     name: str,
     body: PitchCalibrationSaveRequest,
@@ -267,6 +295,7 @@ def _calibration_from_request(
     video_path: Path,
 ) -> tuple[object, CalibrationDiagnostics, object, int, int]:
     frame, width, height = _load_video_frame(video_path, body.frame_index)
+    length_m, width_m = _court_dims_from_request(body)
     try:
         if body.image_boundary_points is not None:
             cal, diag = build_calibration_with_diagnostics(
@@ -275,6 +304,8 @@ def _calibration_from_request(
                 video_path=str(video_path),
                 frame_index=body.frame_index,
                 image_size=(width, height),
+                length_m=length_m,
+                width_m=width_m,
             )
         else:
             points = body.image_corners or []
@@ -285,6 +316,8 @@ def _calibration_from_request(
                     video_path=str(video_path),
                     frame_index=body.frame_index,
                     image_size=(width, height),
+                    length_m=length_m,
+                    width_m=width_m,
                 )
             else:
                 cal, diag = build_calibration_with_diagnostics(
@@ -293,6 +326,8 @@ def _calibration_from_request(
                     video_path=str(video_path),
                     frame_index=body.frame_index,
                     image_size=(width, height),
+                    length_m=length_m,
+                    width_m=width_m,
                 )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -304,6 +339,7 @@ def _preview_from_client_image_size(
     body: PitchCalibrationSaveRequest,
 ) -> PitchCalibrationPreviewResponse:
     assert body.image_width is not None and body.image_height is not None
+    length_m, width_m = _court_dims_from_request(body)
     try:
         if body.image_boundary_points is not None:
             _cal, diag = build_calibration_with_diagnostics(
@@ -312,6 +348,8 @@ def _preview_from_client_image_size(
                 video_path="",
                 frame_index=body.frame_index,
                 image_size=(body.image_width, body.image_height),
+                length_m=length_m,
+                width_m=width_m,
             )
         else:
             points = body.image_corners or []
@@ -322,6 +360,8 @@ def _preview_from_client_image_size(
                     video_path="",
                     frame_index=body.frame_index,
                     image_size=(body.image_width, body.image_height),
+                    length_m=length_m,
+                    width_m=width_m,
                 )
             else:
                 _cal, diag = build_calibration_with_diagnostics(
@@ -330,6 +370,8 @@ def _preview_from_client_image_size(
                     video_path="",
                     frame_index=body.frame_index,
                     image_size=(body.image_width, body.image_height),
+                    length_m=length_m,
+                    width_m=width_m,
                 )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -366,7 +408,7 @@ def save_pitch_calibration(body: PitchCalibrationSaveRequest) -> PitchCalibratio
     out_dir = default_calibration_dir()
     save_calibration(cal, out_dir / f"{name}.json")
 
-    template = render_pitch_template(
+    template = render_court_template(
         length_m=cal.pitch_length_m,
         width_m=cal.pitch_width_m,
     )
@@ -404,6 +446,8 @@ def save_pitch_calibration_upload(
     image_corners: list[list[float]] | None = None,
     image_boundary_points: list[list[float]] | None = None,
     video_path: Path,
+    pitch_length_m: float | None = None,
+    pitch_width_m: float | None = None,
 ) -> PitchCalibrationSaveResponse:
     """Persist legacy corner calibration using an on-disk video (already uploaded)."""
     name = _validate_name(name)
@@ -416,6 +460,8 @@ def save_pitch_calibration_upload(
         frame_index=frame_index,
         image_corners=image_corners,
         image_boundary_points=image_boundary_points,
+        pitch_length_m=pitch_length_m,
+        pitch_width_m=pitch_width_m,
     )
     out_dir = default_calibration_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -426,7 +472,7 @@ def save_pitch_calibration_upload(
 
     save_calibration(cal, out_dir / f"{name}.json")
 
-    template = render_pitch_template(
+    template = render_court_template(
         length_m=cal.pitch_length_m,
         width_m=cal.pitch_width_m,
     )

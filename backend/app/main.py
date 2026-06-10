@@ -148,8 +148,8 @@ async def insights(body: InsightsRequest) -> InsightsResponse:
 
 
 @app.get("/api/pitch/template")
-def pitch_template(name: str = "testmatch2"):
-    return pitch_template_response(name)
+def pitch_template(name: str = "testmatch2", sport: str | None = None):
+    return pitch_template_response(name, sport=sport)
 
 
 @app.get("/api/pitch/calibration")
@@ -224,6 +224,8 @@ async def pitch_calibration_upload(
     frame_index: int = Form(100),
     image_corners: str = Form(...),
     video: UploadFile = File(...),
+    pitch_length_m: float | None = Form(None),
+    pitch_width_m: float | None = Form(None),
 ) -> PitchCalibrationSaveResponse:
     """Save pitch homography from an uploaded legacy video (stored server-side)."""
     import json
@@ -263,6 +265,10 @@ async def pitch_calibration_upload(
                     f"{MAX_BOUNDARY_POINTS} (boundary) or 4 (legacy corners)."
                 ),
             )
+        if pitch_length_m is not None:
+            kwargs["pitch_length_m"] = pitch_length_m
+        if pitch_width_m is not None:
+            kwargs["pitch_width_m"] = pitch_width_m
         return save_pitch_calibration_upload(**kwargs)
     except HTTPException:
         raise

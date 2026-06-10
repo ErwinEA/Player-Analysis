@@ -15,7 +15,9 @@ from backend.app.pipeline.pitch_homography import (
     PITCH_LENGTH_M,
     PITCH_WIDTH_M,
     PitchCalibration,
+    is_badminton_court,
     is_on_pitch,
+    render_badminton_court_template,
     render_pitch_template,
 )
 from backend.app.schemas import Row
@@ -272,11 +274,18 @@ def render_heatmap(
 ) -> np.ndarray:
     """Overlay smoothed heat grid on a top-down pitch template (BGR)."""
     cfg = config or HeatmapConfig()
-    template = render_pitch_template(
-        length_m=length_m,
-        width_m=width_m,
-        pixels_per_meter=cfg.pixels_per_meter,
-    )
+    if is_badminton_court(length_m, width_m):
+        template = render_badminton_court_template(
+            length_m=length_m,
+            width_m=width_m,
+            pixels_per_meter=cfg.pixels_per_meter,
+        )
+    else:
+        template = render_pitch_template(
+            length_m=length_m,
+            width_m=width_m,
+            pixels_per_meter=cfg.pixels_per_meter,
+        )
     h, w = template.shape[:2]
 
     if grid.max() <= 0:

@@ -15,7 +15,9 @@ from backend.app.pipeline.pitch_homography import (
     build_calibration_with_diagnostics,
     compute_homography,
     decagon_to_quad,
+    is_badminton_court,
     probe_calibration,
+    render_badminton_court_template,
     render_pitch_template,
     run_calibration_diagnostics,
     validate_calibration_maps_to_pitch,
@@ -214,6 +216,13 @@ def test_run_calibration_diagnostics_does_not_raise_on_bad_probes():
     diag = run_calibration_diagnostics(cal)
     assert diag.probe_total == 5
     assert 0.0 <= diag.confidence <= 1.0
+
+
+def test_badminton_court_template_dimensions():
+    img = render_badminton_court_template(length_m=13.4, width_m=6.1)
+    assert img.shape[0] > 0 and img.shape[1] > 0
+    assert is_badminton_court(13.4, 6.1)
+    assert not is_badminton_court(105.0, 68.0)
 
 
 def test_testmatch2_fixture_loads_and_recomputes_homography():

@@ -634,6 +634,65 @@ def render_pitch_template(
     return img
 
 
+def badminton_court_asset_path() -> Path:
+    """AVIF court diagram (public/badminton-court-vector.avif)."""
+    root = Path(__file__).resolve().parents[3]
+    for candidate in (
+        root / "public" / "badminton-court-vector.avif",
+        root / "badminton-court-vector.avif",
+    ):
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        "Badminton court asset not found. Add public/badminton-court-vector.avif."
+    )
+
+
+def render_badminton_court_template(
+    *,
+    length_m: float = 13.4,
+    width_m: float = 6.1,
+    pixels_per_meter: int = DEFAULT_PIXELS_PER_METER,
+) -> np.ndarray:
+    """Load badminton-court-vector.avif, resized for heatmap / template API."""
+    target_w = int(round(length_m * pixels_per_meter))
+    target_h = int(round(width_m * pixels_per_meter))
+    if target_w < 1 or target_h < 1:
+        raise ValueError("Invalid badminton court template dimensions.")
+
+    asset = badminton_court_asset_path()
+    raw = np.fromfile(asset, dtype=np.uint8)
+    img = cv2.imdecode(raw, cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError(f"Could not decode badminton court image: {asset}")
+    return cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
+
+
+def is_badminton_court(length_m: float, width_m: float) -> bool:
+    """Heuristic: court dimensions match badminton singles scale."""
+    return length_m <= 14.0 and width_m <= 8.0
+
+
+def render_court_template(
+    *,
+    length_m: float,
+    width_m: float,
+    pixels_per_meter: int = DEFAULT_PIXELS_PER_METER,
+) -> np.ndarray:
+    """Top-down court diagram for heatmap / template API (sport-aware)."""
+    if is_badminton_court(length_m, width_m):
+        return render_badminton_court_template(
+            length_m=length_m,
+            width_m=width_m,
+            pixels_per_meter=pixels_per_meter,
+        )
+    return render_pitch_template(
+        length_m=length_m,
+        width_m=width_m,
+        pixels_per_meter=pixels_per_meter,
+    )
+
+
 def warp_frame_to_topview(
     frame: np.ndarray,
     cal: PitchCalibration,

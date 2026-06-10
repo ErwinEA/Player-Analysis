@@ -186,7 +186,7 @@ class AnalyzeResponse(BaseModel):
     heatmap: HeatmapResult | None = None
     calibration_name: str | None = None
     heatmap_source: str | None = None  # locked_target | fallback_track
-    calibration_skipped_reason: str | None = None  # size_mismatch | positions_out_of_bounds
+    calibration_skipped_reason: str | None = None  # size_mismatch | positions_out_of_bounds | court_dimension_mismatch
     masks_available: bool | None = None
     masks_unavailable_reason: str | None = None
     mask_row_count: int | None = None
@@ -220,6 +220,8 @@ class PitchCalibrationSaveRequest(BaseModel):
     image_corners: list[list[float]] | None = None
     image_boundary_points: list[list[float]] | None = None
     point_labels: list[str] | None = None
+    pitch_length_m: float | None = Field(default=None, gt=0)
+    pitch_width_m: float | None = Field(default=None, gt=0)
     """Frame size for preview when the calibration video is not on the server yet."""
     image_width: int | None = Field(default=None, ge=1)
     image_height: int | None = Field(default=None, ge=1)

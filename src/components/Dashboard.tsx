@@ -481,7 +481,12 @@ export function Dashboard() {
         </p>
       )}
       <div className={styles.body}>
-        <Sidebar sport={sport} details={details} onChange={handleDetailsChange} />
+        <Sidebar
+          sport={sport}
+          details={details}
+          onChange={handleDetailsChange}
+          videoFile={video}
+        />
         <main id="main-content" className={styles.main}>
           <UploadAnalyzePanel
             sport={sport}

@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRadioGroupKeyboard } from "@/hooks/useRadioGroupKeyboard";
 import type { CourtSide, Sport } from "@/types/sport";
 import styles from "./Sidebar.module.css";
-import { InfoIcon, UserIcon } from "./icons";
+import { EyedropperIcon, InfoIcon, UserIcon } from "./icons";
+import { JerseyColorEyedropperModal } from "./JerseyColorEyedropperModal";
 
 export type HexColor = `#${string}`;
 
@@ -22,7 +23,10 @@ type SidebarProps = {
   sport: Sport;
   details: PlayerDetails;
   onChange: (details: PlayerDetails) => void;
+  videoFile?: File | null;
 };
+
+type EyedropperTarget = "primary" | "secondary" | null;
 
 const JERSEY_HINT_ID = "player-jersey-hint";
 const JERSEY_ERROR_ID = "player-jersey-error";
@@ -54,10 +58,17 @@ function isLightSwatch(hex: HexColor): boolean {
   return hex.toLowerCase() === "#ffffff";
 }
 
-export function Sidebar({ sport, details, onChange }: SidebarProps) {
+export function Sidebar({
+  sport,
+  details,
+  onChange,
+  videoFile = null,
+}: SidebarProps) {
   const [jerseyTouched, setJerseyTouched] = useState(false);
   const [courtSideTouched, setCourtSideTouched] = useState(false);
   const [shirtColorTouched, setShirtColorTouched] = useState(false);
+  const [eyedropperTarget, setEyedropperTarget] =
+    useState<EyedropperTarget>(null);
 
   useEffect(() => {
     setJerseyTouched(false);
@@ -105,6 +116,24 @@ export function Sidebar({ sport, details, onChange }: SidebarProps) {
   const shirtColorInvalid = !details.primaryJerseyColor;
   const showCourtSideError = courtSideTouched && courtSideInvalid;
   const showShirtColorError = shirtColorTouched && shirtColorInvalid;
+
+  const handleEyedropperPick = useCallback(
+    (color: HexColor) => {
+      if (eyedropperTarget === "primary") {
+        setShirtColorTouched(true);
+        onChange({ ...details, primaryJerseyColor: color });
+      } else if (eyedropperTarget === "secondary") {
+        onChange({ ...details, secondaryJerseyColor: color });
+      }
+      setEyedropperTarget(null);
+    },
+    [details, eyedropperTarget, onChange],
+  );
+
+  const eyedropperLabel =
+    eyedropperTarget === "secondary"
+      ? "secondary shirt color"
+      : "primary shirt color";
 
   return (
     <aside className={styles.sidebar} aria-label="Player configuration">
@@ -239,6 +268,8 @@ export function Sidebar({ sport, details, onChange }: SidebarProps) {
                     ? `${SHIRT_COLOR_HINT_ID} ${SHIRT_COLOR_ERROR_ID}`
                     : SHIRT_COLOR_HINT_ID
                 }
+                videoFile={videoFile}
+                onEyedropper={() => setEyedropperTarget("primary")}
               />
               <ColorPalette
                 label="Secondary / trim color"
@@ -247,10 +278,13 @@ export function Sidebar({ sport, details, onChange }: SidebarProps) {
                   onChange({ ...details, secondaryJerseyColor: value })
                 }
                 mode="toggle"
+                videoFile={videoFile}
+                onEyedropper={() => setEyedropperTarget("secondary")}
               />
               <p id={SHIRT_COLOR_HINT_ID} className={styles.fieldHint}>
                 Shirt color is the main way we lock onto your player in
-                badminton footage.
+                badminton footage. Use the eyedropper to sample the real shirt
+                color from your uploaded video.
               </p>
               {showShirtColorError && (
                 <p id={SHIRT_COLOR_ERROR_ID} className={styles.fieldError} role="alert">
@@ -289,6 +323,8 @@ export function Sidebar({ sport, details, onChange }: SidebarProps) {
                 onChange({ ...details, primaryJerseyColor: value })
               }
               mode="toggle"
+              videoFile={videoFile}
+              onEyedropper={() => setEyedropperTarget("primary")}
             />
             <ColorPalette
               label="Secondary / trim color"
@@ -297,6 +333,8 @@ export function Sidebar({ sport, details, onChange }: SidebarProps) {
                 onChange({ ...details, secondaryJerseyColor: value })
               }
               mode="toggle"
+              videoFile={videoFile}
+              onEyedropper={() => setEyedropperTarget("secondary")}
             />
           </div>
         )}
@@ -334,6 +372,16 @@ export function Sidebar({ sport, details, onChange }: SidebarProps) {
           </p>
         </div>
       </section>
+
+      {videoFile && eyedropperTarget && (
+        <JerseyColorEyedropperModal
+          open
+          videoFile={videoFile}
+          targetLabel={eyedropperLabel}
+          onClose={() => setEyedropperTarget(null)}
+          onPick={handleEyedropperPick}
+        />
+      )}
     </aside>
   );
 }
@@ -346,6 +394,8 @@ type ColorPaletteProps = {
   required?: boolean;
   invalid?: boolean;
   describedBy?: string;
+  videoFile?: File | null;
+  onEyedropper?: () => void;
 };
 
 function ColorPalette({
@@ -356,9 +406,18 @@ function ColorPalette({
   required = false,
   invalid = false,
   describedBy,
+  videoFile = null,
+  onEyedropper,
 }: ColorPaletteProps) {
   const groupLabelId = `${label.replace(/\W+/g, "-")}-label`;
   const isRadio = mode === "radio";
+  const paletteHexes = useMemo(
+    () => new Set(KIT_PALETTE.map((entry) => entry.hex.toLowerCase())),
+    [],
+  );
+  const isCustomColor = Boolean(
+    value && !paletteHexes.has(value.toLowerCase()),
+  );
   const { onKeyDown, getTabIndex, setButtonRef } = useRadioGroupKeyboard(
     COLOR_VALUES,
     value,
@@ -373,10 +432,15 @@ function ColorPalette({
     onChange(selected ? "" : hex);
   };
 
+  const eyedropperDisabled = !videoFile;
+
   return (
     <div className={styles.colorBlock}>
       <span className={styles.colorLabel} id={groupLabelId}>
         {label}
+        {isCustomColor && value ? (
+          <span className={styles.optionalMark}> ({value})</span>
+        ) : null}
       </span>
       <div
         className={styles.swatchRow}
@@ -405,6 +469,36 @@ function ColorPalette({
             />
           );
         })}
+        {isCustomColor && value ? (
+          <button
+            type="button"
+            role={isRadio ? "radio" : undefined}
+            aria-checked={isRadio ? true : undefined}
+            aria-pressed={!isRadio ? true : undefined}
+            className={`${styles.swatch} ${styles.swatchSelected} ${styles.customSwatch} ${isLightSwatch(value) ? styles.swatchLight : ""}`}
+            style={{ backgroundColor: value }}
+            aria-label={`Custom sampled color ${value} (selected)`}
+            onClick={() => onChange(value)}
+          />
+        ) : null}
+        <button
+          type="button"
+          className={styles.eyedropperBtn}
+          disabled={eyedropperDisabled}
+          aria-label={
+            eyedropperDisabled
+              ? "Upload a video to sample shirt color"
+              : `Sample ${label.toLowerCase()} from video`
+          }
+          title={
+            eyedropperDisabled
+              ? "Upload a video first"
+              : "Pick color from video"
+          }
+          onClick={() => onEyedropper?.()}
+        >
+          <EyedropperIcon className={styles.eyedropperIcon} />
+        </button>
       </div>
     </div>
   );

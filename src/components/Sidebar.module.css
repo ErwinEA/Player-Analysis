@@ -165,7 +165,51 @@
 .swatchRow {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 9px;
+}
+
+.eyedropperBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px dashed rgba(15, 23, 42, 0.28);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--text-muted);
+  padding: 0;
+  cursor: pointer;
+}
+
+.eyedropperBtn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(219, 234, 254, 0.65);
+}
+
+.eyedropperBtn:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px var(--accent-soft);
+}
+
+.eyedropperBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.eyedropperIcon {
+  width: 14px;
+  height: 14px;
+}
+
+.customSwatch {
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px var(--accent);
 }
 
 .swatch {

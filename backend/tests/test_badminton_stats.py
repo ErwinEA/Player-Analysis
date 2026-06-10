@@ -45,4 +45,60 @@ def test_build_badminton_stats_from_movement():
     assert stats.court_coverage_km == 1.25
     assert stats.movement_speed_ms == 2.5
     assert stats.rally_wins is None
+    assert reason == "no_shuttle_weights"
+
+
+def test_build_badminton_stats_pending_when_detector_ran_without_rallies():
+    target = TargetMatch(jersey=0, track_id=7, confidence=0.8, method="court_side")
+    stats, reason = build_badminton_stats(
+        movement=None,
+        target=target,
+        has_calibration=True,
+        rally_events=[],
+        shuttle_available=True,
+    )
+    assert stats is not None
+    assert stats.total_rallies is None
     assert reason == "rally_detection_pending"
+
+
+def test_build_badminton_stats_fills_rally_fields():
+    from backend.app.pipeline.badminton.rally_tracker import RallyEvent
+
+    target = TargetMatch(jersey=0, track_id=7, confidence=1.0, method="court_side")
+    events = [
+        RallyEvent(
+            start_frame=0,
+            end_frame=300,
+            winner_side="near",
+            locked_player_touched_last=True,
+        ),
+        RallyEvent(
+            start_frame=400,
+            end_frame=550,
+            winner_side="far",
+            locked_player_touched_last=False,
+        ),
+        RallyEvent(
+            start_frame=600,
+            end_frame=900,
+            winner_side="near",
+            locked_player_touched_last=False,
+        ),
+    ]
+    stats, reason = build_badminton_stats(
+        movement=None,
+        target=target,
+        has_calibration=True,
+        rally_events=events,
+        court_side="near",
+        fps=30.0,
+        shuttle_available=True,
+    )
+    assert reason is None
+    assert stats is not None
+    assert stats.total_rallies == 3
+    assert stats.rally_wins == 2
+    assert stats.win_rate_pct == 66.7
+    assert stats.avg_rally_duration_s == 8.33
+    assert stats.winners == 1

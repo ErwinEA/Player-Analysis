@@ -140,6 +140,19 @@ class TrackIdentityMatcher:
     def is_locked(self) -> bool:
         return self.lock is not None
 
+    def apply_court_side_lock(
+        self, track_id: int, confidence: float = 1.0
+    ) -> TargetLock:
+        """Lock target by court-side disambiguation (badminton)."""
+        lock = TargetLock(
+            track_id=track_id,
+            jersey=self.target_jersey,
+            method="court_side",
+            confidence=round(confidence, 3),
+        )
+        self.lock = lock
+        return lock
+
     def release_lock(self) -> None:
         """Drop the current lock so the target can be re-acquired on a new shot.
 

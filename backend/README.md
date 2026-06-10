@@ -131,6 +131,10 @@ Health check: `GET http://localhost:8000/health`
 
 ## API
 
+### Badminton mode
+
+Set `"sport": "badminton"` in `details` with `courtSide` (`"near"` or `"far"`) and `primaryJerseyColor`. Jersey OCR and ball events are skipped; the pipeline locks the target by **court side** (with shirt-color fallback) and returns movement stats in metres when calibration uses the singles court (**13.4 m × 6.1 m**). Save court calibration while Badminton is selected in the UI so dimensions are stored correctly. Rally metrics (rally wins, win rate, duration, winners) need `yolov8n_shuttle.pt` (see [weights/README.md](weights/README.md#shuttle-detector-yolov8-badminton)); without it they stay null with `badminton_stats_unavailable_reason: no_shuttle_weights`.
+
 ### `POST /api/analyze`
 
 Uses the same `run_pipeline()` as `python -m backend.cli` (see [CLI](#cli-smoke-test-without-http)).

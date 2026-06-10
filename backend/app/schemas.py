@@ -130,6 +130,15 @@ class PlayerEventCounts(BaseModel):
     Drive: int = 0
 
 
+class ShuttleSample(BaseModel):
+    """Shuttlecock position in a video frame (pixel coordinates)."""
+
+    frame: int
+    cx: float
+    cy: float
+    conf: float | None = None
+
+
 class BadmintonStats(BaseModel):
     rally_wins: int | None = None
     total_rallies: int | None = None
@@ -198,6 +207,7 @@ class AnalyzeResponse(BaseModel):
     drive_contact_m: float | None = None
     badminton_stats: BadmintonStats | None = None
     badminton_stats_unavailable_reason: str | None = None
+    shuttle_samples: list[ShuttleSample] = Field(default_factory=list)
     video_url: str | None = None
     video_unavailable_reason: str | None = None
 

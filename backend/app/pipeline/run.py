@@ -54,6 +54,7 @@ from backend.app.schemas import (
     InferredBallEvent,
     PlayerEventCounts,
     Row,
+    ShuttleSample,
     TargetMatch,
     VideoMeta,
     jersey_colors_configured,
@@ -629,6 +630,12 @@ def run_pipeline(
         rally_tracker = None
         badminton_net_y = height / 2.0
         shuttle_stride = max(1, int(os.environ.get("SHUTTLE_STRIDE", "1")))
+        shuttle_samples: list[ShuttleSample] = []
+        last_overlay_shuttle_px: tuple[float, float] | None = None
+        last_overlay_shuttle_frame: int | None = None
+        overlay_shuttle_hold = max(
+            1, int(os.environ.get("SHUTTLE_OVERLAY_HOLD_FRAMES", "8"))
+        )
         if is_badminton:
             from backend.app.pipeline.badminton.shuttle_detector import ShuttleDetector
 
@@ -1212,11 +1219,22 @@ def run_pipeline(
                         )
 
             shuttle_px_frame: tuple[float, float] | None = None
+            overlay_shuttle_px: tuple[float, float] | None = None
             if rally_tracker is not None and shuttle_detector is not None:
                 if shuttle_stride <= 1 or frame_idx % shuttle_stride == 0:
                     shuttle_det = shuttle_detector.detect(frame)
                     if shuttle_det is not None:
                         shuttle_px_frame = shuttle_det.center_px
+                        last_overlay_shuttle_px = shuttle_px_frame
+                        last_overlay_shuttle_frame = frame_idx
+                        shuttle_samples.append(
+                            ShuttleSample(
+                                frame=frame_idx,
+                                cx=round(shuttle_det.center_px[0], 2),
+                                cy=round(shuttle_det.center_px[1], 2),
+                                conf=round(shuttle_det.conf, 3),
+                            )
+                        )
                 locked_foot_px: tuple[float, float] | None = None
                 if matcher.lock is not None:
                     for tr in tracks:
@@ -1226,6 +1244,14 @@ def run_pipeline(
                 badminton_rally_state = rally_tracker.update(
                     frame_idx, shuttle_px_frame, locked_foot_px
                 )
+                if shuttle_px_frame is not None:
+                    overlay_shuttle_px = shuttle_px_frame
+                elif (
+                    last_overlay_shuttle_px is not None
+                    and last_overlay_shuttle_frame is not None
+                    and frame_idx - last_overlay_shuttle_frame <= overlay_shuttle_hold
+                ):
+                    overlay_shuttle_px = last_overlay_shuttle_px
 
             if video_writer is not None:
                 frame_lock = matcher.lock
@@ -1252,7 +1278,7 @@ def run_pipeline(
                         track_draws,
                         locked_track_id=locked_id,
                         court_side_label=court_side_label,
-                        shuttle_px=shuttle_px_frame,
+                        shuttle_px=overlay_shuttle_px,
                         rally_state=badminton_rally_state,
                     )
                 else:
@@ -1546,6 +1572,7 @@ def run_pipeline(
             drive_contact_m=drive_contact_m,
             badminton_stats=badminton_stats,
             badminton_stats_unavailable_reason=badminton_stats_unavailable_reason,
+            shuttle_samples=shuttle_samples if is_badminton else [],
         )
     finally:
         if video_writer is not None:

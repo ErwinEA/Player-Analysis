@@ -152,13 +152,17 @@ def draw_shuttle_dot(
     cx: float,
     cy: float,
     *,
-    radius: int = 5,
+    radius: int = 8,
     color: tuple[int, int, int] = (0, 165, 255),
 ) -> None:
+    """High-contrast shuttle marker (orange fill + white ring)."""
     h, w = img.shape[:2]
     ix, iy = int(round(cx)), int(round(cy))
-    if 0 <= ix < w and 0 <= iy < h:
-        cv2.circle(img, (ix, iy), radius, color, -1, lineType=cv2.LINE_AA)
+    if not (0 <= ix < w and 0 <= iy < h):
+        return
+    cv2.circle(img, (ix, iy), radius + 3, WHITE, 2, lineType=cv2.LINE_AA)
+    cv2.circle(img, (ix, iy), radius, color, -1, lineType=cv2.LINE_AA)
+    cv2.circle(img, (ix, iy), radius, WHITE, 1, lineType=cv2.LINE_AA)
 
 
 def draw_rally_end_flash(

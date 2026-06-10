@@ -95,6 +95,13 @@ export type InferredBallEvent = {
   possession_confidence?: string | null;
 };
 
+export type ShuttleSample = {
+  frame: number;
+  cx: number;
+  cy: number;
+  conf?: number | null;
+};
+
 export type BadmintonStats = {
   rally_wins: number | null;
   total_rallies: number | null;
@@ -125,6 +132,7 @@ export type AnalyzeResponse = {
   drive_contact_m?: number | null;
   badminton_stats?: BadmintonStats | null;
   badminton_stats_unavailable_reason?: string | null;
+  shuttle_samples?: ShuttleSample[];
   video_url?: string | null;
   video_unavailable_reason?: string | null;
 };

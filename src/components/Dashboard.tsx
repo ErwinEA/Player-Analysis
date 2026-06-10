@@ -522,6 +522,9 @@ export function Dashboard() {
             maskFrameOffset={
               result?.video_url ? (result.video.frame_start ?? 0) : 0
             }
+            shuttleSamples={
+              sport === "badminton" ? (result?.shuttle_samples ?? null) : null
+            }
           />
           <div className={styles.insightsRow}>
             <HeatMapPanel

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { hasPitchCalibration } from "@/lib/api";
 import { calibrationKeyFromFilename } from "@/lib/videoFrame";
 import type { MobileSamHealth } from "@/lib/api";
-import type { Row } from "@/types/analysis";
+import type { Row, ShuttleSample } from "@/types/analysis";
 import type { Sport } from "@/types/sport";
 import { VideoUploadPanel } from "./VideoUploadPanel";
 import styles from "./UploadAnalyzePanel.module.css";
@@ -25,6 +25,7 @@ type UploadAnalyzePanelProps = {
   annotatedVideoUrl?: string | null;
   annotatedVideoUnavailableReason?: string | null;
   maskFrameOffset?: number;
+  shuttleSamples?: ShuttleSample[] | null;
 };
 
 export function UploadAnalyzePanel({
@@ -43,6 +44,7 @@ export function UploadAnalyzePanel({
   annotatedVideoUrl = null,
   annotatedVideoUnavailableReason = null,
   maskFrameOffset = 0,
+  shuttleSamples = null,
 }: UploadAnalyzePanelProps) {
   const [checkingCalibration, setCheckingCalibration] = useState(false);
   const calibrationCheckRef = useRef(0);
@@ -91,6 +93,7 @@ export function UploadAnalyzePanel({
         annotatedVideoUrl={annotatedVideoUrl}
         annotatedVideoUnavailableReason={annotatedVideoUnavailableReason}
         maskFrameOffset={maskFrameOffset}
+        shuttleSamples={shuttleSamples}
       />
       {file && (
         <section

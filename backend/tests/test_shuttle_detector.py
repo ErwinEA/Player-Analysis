@@ -11,13 +11,13 @@ from backend.app.pipeline.badminton.shuttle_detector import (
     shuttle_health,
 )
 
-_REPO_SHUTTLE = Path("backend/weights/yolov8n_shuttle.pt")
+_REPO_SHUTTLE = Path("backend/weights/yolov8m_shuttlecock.pt")
 
 
 def test_resolve_shuttle_weights_missing_returns_none(monkeypatch):
     monkeypatch.delenv("SHUTTLE_WEIGHTS", raising=False)
-    out = resolve_shuttle_weights("/nonexistent/yolov8n_shuttle.pt")
-    assert out is None or out.endswith("yolov8n_shuttle.pt")
+    out = resolve_shuttle_weights("/nonexistent/yolov8m_shuttlecock.pt")
+    assert out is None or out.endswith("yolov8m_shuttlecock.pt")
 
 
 def test_shuttle_detector_unavailable_without_weights(monkeypatch):
@@ -40,15 +40,15 @@ def test_shuttle_detection_center():
 
 def test_resolve_shuttle_weights_finds_backend_default():
     if not _REPO_SHUTTLE.is_file():
-        pytest.skip("yolov8n_shuttle.pt not installed locally")
+        pytest.skip("yolov8m_shuttlecock.pt not installed locally")
     out = resolve_shuttle_weights()
     assert out is not None
-    assert out.endswith("yolov8n_shuttle.pt")
+    assert out.endswith("yolov8m_shuttlecock.pt")
 
 
 def test_shuttle_detector_loads_when_weights_present():
     if not _REPO_SHUTTLE.is_file():
-        pytest.skip("yolov8n_shuttle.pt not installed locally")
+        pytest.skip("yolov8m_shuttlecock.pt not installed locally")
     det = ShuttleDetector()
     assert det.available is True
     assert det.weights is not None
@@ -56,7 +56,7 @@ def test_shuttle_detector_loads_when_weights_present():
 
 def test_shuttle_health_ok_when_weights_present():
     if not _REPO_SHUTTLE.is_file():
-        pytest.skip("yolov8n_shuttle.pt not installed locally")
+        pytest.skip("yolov8m_shuttlecock.pt not installed locally")
     h = shuttle_health()
     assert h["weights_found"] is True
     assert h["status"] == "ok"

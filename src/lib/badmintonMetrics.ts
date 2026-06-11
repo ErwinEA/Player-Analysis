@@ -51,7 +51,7 @@ export function badmintonMetricsWarning(
     return "Rally stats need a confident player lock via court side or shirt color.";
   }
   if (reason === "no_shuttle_weights") {
-    return "Rally stats need shuttle detection weights: add yolov8n_shuttle.pt to backend/weights (see backend/weights/README.md). Movement stats use tracking data.";
+    return "Rally stats need shuttle detection weights: add yolov8m_shuttlecock.pt to backend/weights (see backend/weights/README.md). Movement stats use tracking data.";
   }
   if (reason === "rally_detection_pending") {
     return "No rallies detected in this clip — rally wins, win rate, duration, and winners are unavailable. Movement stats use tracking data.";

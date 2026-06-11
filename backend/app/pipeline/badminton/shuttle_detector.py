@@ -53,7 +53,7 @@ def shuttle_health() -> dict[str, object]:
             "weights_path": None,
             "status": "unavailable",
             "unavailable_reason": (
-                "Shuttle weights not found — place yolov8n_shuttle.pt in "
+                "Shuttle weights not found — place yolov8m_shuttlecock.pt in "
                 "backend/weights/ or set SHUTTLE_WEIGHTS"
             ),
         }
@@ -71,7 +71,7 @@ def resolve_shuttle_weights(explicit: str | None = None) -> str | None:
     env = os.environ.get("SHUTTLE_WEIGHTS", "").strip()
     if env and Path(env).is_file():
         return env
-    candidate = _REPO_ROOT / "backend" / "weights" / "yolov8n_shuttle.pt"
+    candidate = _REPO_ROOT / "backend" / "weights" / "yolov8m_shuttlecock.pt"
     if candidate.is_file():
         return str(candidate)
     return None
@@ -168,7 +168,7 @@ class ShuttleDetector:
         if resolved is None:
             logger.warning(
                 "Shuttle weights not found — rally detection disabled. "
-                "Place yolov8n_shuttle.pt in backend/weights/ or set SHUTTLE_WEIGHTS."
+                "Place yolov8m_shuttlecock.pt in backend/weights/ or set SHUTTLE_WEIGHTS."
             )
             return
 

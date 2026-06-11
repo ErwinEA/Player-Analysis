@@ -12,7 +12,7 @@ Use on a **new machine** after `pip install -r backend/requirements.txt`. Checkp
 | 2 | `jersey_number_b0.pt` | `detection_test/weights/` | [Jersey classifier](#jersey-number-classifier-efficientnet-b0) |
 | 3 | `osnet_x1_0_soccernet.pth` | `detection_test/weights/` | [OSNet ReID](#osnet-reid-legacy--detection-pipeline) |
 | 4 | `yolov8n_ball.pt` | `detection_test/weights/` then `backend/weights/` | [Ball YOLO](#ball-detector-yolov8) |
-| 5 | `yolov8n_shuttle.pt` | `backend/weights/` | [Shuttle YOLO](#shuttle-detector-yolov8-badminton) — badminton rally stats only |
+| 5 | `yolov8m_shuttlecock.pt` | `backend/weights/` | [Shuttle YOLO](#shuttle-detector-yolov8-badminton) — badminton rally stats only |
 
 Person detector **`yolov8n.pt`**: Ultralytics auto-download on first analyze (`YOLO_WEIGHTS`).
 
@@ -24,7 +24,7 @@ check backend/weights/mobile_sam.pt
 check detection_test/weights/jersey_number_b0.pt
 check detection_test/weights/osnet_x1_0_soccernet.pth
 check detection_test/weights/yolov8n_ball.pt || check backend/weights/yolov8n_ball.pt
-check backend/weights/yolov8n_shuttle.pt
+check backend/weights/yolov8m_shuttlecock.pt
 ```
 
 **Optional API check** (start backend first, e.g. `./scripts/dev_backend.sh` from repo root):
@@ -39,7 +39,7 @@ curl -s http://localhost:8000/health | python3 -m json.tool   # mobile_sam.statu
 | `jersey_number_b0.pt` | EasyOCR jersey digits only |
 | `osnet_x1_0_soccernet.pth` | Generic ImageNet OSNet |
 | `yolov8n_ball.pt` | Ball event stats disabled |
-| `yolov8n_shuttle.pt` | Badminton rally stats disabled (`badminton_stats_unavailable_reason: no_shuttle_weights`) |
+| `yolov8m_shuttlecock.pt` | Badminton rally stats disabled (`badminton_stats_unavailable_reason: no_shuttle_weights`) |
 
 Sandbox YOLO/ReID: [detection_test/WEIGHTS.md](../../detection_test/WEIGHTS.md).
 
@@ -71,18 +71,18 @@ The weights file is **not** committed to git. Place it manually on each machine.
 
 | File | Purpose |
 |------|---------|
-| **`yolov8n_shuttle.pt`** | Shuttlecock detection for badminton rally stats (rally wins, win rate, duration, winners) |
+| **`yolov8m_shuttlecock.pt`** | Shuttlecock detection for badminton rally stats (rally wins, win rate, duration, winners) |
 
 **Path:**
 
 ```
-backend/weights/yolov8n_shuttle.pt
+backend/weights/yolov8m_shuttlecock.pt
 ```
 
 Or:
 
 ```bash
-export SHUTTLE_WEIGHTS=/absolute/path/to/yolov8n_shuttle.pt
+export SHUTTLE_WEIGHTS=/absolute/path/to/yolov8m_shuttlecock.pt
 ```
 
 Not committed to git. If missing, rally stats are disabled (`badminton_stats_unavailable_reason: no_shuttle_weights`) and badminton movement stats / heatmap still run.

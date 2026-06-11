@@ -1228,6 +1228,10 @@ def run_pipeline(
             shuttle_px_frame: tuple[float, float] | None = None
             overlay_shuttle_px: tuple[float, float] | None = None
             if shuttle_detector is not None and shuttle_kalman is not None:
+                # After a scene cut, player tracker and shuttle Kalman are reset above.
+                # While the shot stabilizes, only raw detections feed overlay/rally
+                # so predicted positions cannot carry across the boundary.
+                shuttle_scene_suppressed = scene_detector.is_suppressed
                 if shuttle_stride <= 1 or frame_idx % shuttle_stride == 0:
                     shuttle_det = shuttle_detector.detect(frame)
                     if shuttle_det is not None:
@@ -1235,7 +1239,11 @@ def run_pipeline(
                         smooth_px = shuttle_kalman.update(
                             shuttle_det.center_px[0], shuttle_det.center_px[1]
                         )
-                        overlay_shuttle_px = smooth_px
+                        overlay_shuttle_px = (
+                            shuttle_px_frame
+                            if shuttle_scene_suppressed
+                            else smooth_px
+                        )
                         shuttle_samples.append(
                             ShuttleSample(
                                 frame=frame_idx,
@@ -1244,9 +1252,9 @@ def run_pipeline(
                                 conf=round(shuttle_det.conf, 3),
                             )
                         )
-                    else:
+                    elif not shuttle_scene_suppressed:
                         overlay_shuttle_px = shuttle_kalman.predict()
-                else:
+                elif not shuttle_scene_suppressed:
                     # Stride skip: advance the Kalman prediction so it stays current.
                     overlay_shuttle_px = shuttle_kalman.predict()
 
@@ -1258,7 +1266,7 @@ def run_pipeline(
                             break
                 if rally_tracker is not None:
                     rally_shuttle_px = shuttle_px_frame
-                    if rally_shuttle_px is None:
+                    if rally_shuttle_px is None and not shuttle_scene_suppressed:
                         rally_shuttle_px = overlay_shuttle_px
                     badminton_rally_state = rally_tracker.update(
                         frame_idx, rally_shuttle_px, locked_foot_px

@@ -77,6 +77,65 @@ def resolve_shuttle_weights(explicit: str | None = None) -> str | None:
     return None
 
 
+class ShuttleKalman:
+    """Pixel-space constant-velocity Kalman filter for shuttle overlay smoothing.
+
+    Call ``update()`` when a detection is available, ``predict()`` when the
+    shuttle is not detected.  ``predict()`` returns None once the gap exceeds
+    ``gap_max`` frames, which triggers an internal reset so the next detection
+    seeds a fresh trajectory.
+    """
+
+    def __init__(self, gap_max: int = 15) -> None:
+        self._gap_max = gap_max
+        self._x: np.ndarray | None = None  # [cx, cy, vx, vy]
+        self._P: np.ndarray | None = None
+        self._F = np.array(
+            [[1, 0, 1, 0], [0, 1, 0, 1], [0, 0, 1, 0], [0, 0, 0, 1]],
+            dtype=np.float64,
+        )
+        self._H = np.array([[1, 0, 0, 0], [0, 1, 0, 0]], dtype=np.float64)
+        # Higher process noise → filter trusts measurement more (fast shuttle).
+        self._Q = np.diag([2.0, 2.0, 8.0, 8.0]).astype(np.float64)
+        self._R = np.diag([4.0, 4.0]).astype(np.float64)
+        self._I = np.eye(4, dtype=np.float64)
+        self._predict_streak = 0
+
+    def reset(self) -> None:
+        self._x = None
+        self._P = None
+        self._predict_streak = 0
+
+    def update(self, cx: float, cy: float) -> tuple[float, float]:
+        """Incorporate a detection; returns the filtered (cx, cy)."""
+        z = np.array([cx, cy], dtype=np.float64)
+        if self._x is None:
+            self._x = np.array([cx, cy, 0.0, 0.0], dtype=np.float64)
+            self._P = 10.0 * self._I.copy()
+            self._predict_streak = 0
+            return cx, cy
+        x_pred = self._F @ self._x
+        P_pred = self._F @ self._P @ self._F.T + self._Q
+        K = P_pred @ self._H.T @ np.linalg.inv(self._H @ P_pred @ self._H.T + self._R)
+        self._x = x_pred + K @ (z - self._H @ x_pred)
+        self._P = (self._I - K @ self._H) @ P_pred
+        self._predict_streak = 0
+        return float(self._x[0]), float(self._x[1])
+
+    def predict(self) -> tuple[float, float] | None:
+        """Advance the filter one step without a measurement; returns None after ``gap_max`` frames."""
+        if self._x is None:
+            return None
+        self._predict_streak += 1
+        if self._predict_streak > self._gap_max:
+            self.reset()
+            return None
+        self._x = self._F @ self._x
+        if self._P is not None:
+            self._P = self._F @ self._P @ self._F.T + self._Q
+        return float(self._x[0]), float(self._x[1])
+
+
 @dataclass(frozen=True)
 class ShuttleDetection:
     cx_px: float

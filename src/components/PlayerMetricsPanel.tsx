@@ -78,7 +78,7 @@ const BADMINTON_METRIC_CONFIG: MetricConfig<BadmintonMetricKey>[] = [
   {
     key: "movementSpeedMs",
     label: "Movement speed",
-    caption: "avg during rallies",
+    caption: "avg movement speed",
     unit: "m/s",
     Icon: PassIcon,
   },

@@ -40,6 +40,7 @@ export function JerseyColorEyedropperModal({
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const loadFrameIdRef = useRef(0);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +84,7 @@ export function JerseyColorEyedropperModal({
 
   const loadFrame = useCallback(
     async (seek: number) => {
+      const loadId = ++loadFrameIdRef.current;
       setLoading(true);
       setError(null);
       setPickedColor(null);
@@ -93,12 +95,14 @@ export function JerseyColorEyedropperModal({
           seek,
           "eyedropper",
         );
+        if (loadId !== loadFrameIdRef.current) return;
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
           img.onload = () => resolve();
           img.onerror = () => reject(new Error("Could not decode frame"));
           img.src = `data:image/jpeg;base64,${data.image_jpeg_base64}`;
         });
+        if (loadId !== loadFrameIdRef.current) return;
         imageRef.current = img;
         setFrameSize({ width: data.width, height: data.height });
         const canvas = canvasRef.current;
@@ -108,11 +112,14 @@ export function JerseyColorEyedropperModal({
         }
         redraw();
       } catch (err) {
+        if (loadId !== loadFrameIdRef.current) return;
         setError(
           err instanceof Error ? err.message : "Could not load video frame",
         );
       } finally {
-        setLoading(false);
+        if (loadId === loadFrameIdRef.current) {
+          setLoading(false);
+        }
       }
     },
     [videoFile, redraw],
@@ -154,10 +161,8 @@ export function JerseyColorEyedropperModal({
         : null;
     const main = document.querySelector("main");
     const header = document.querySelector("header");
-    const sidebar = document.querySelector("aside");
     main?.setAttribute("inert", "");
     header?.setAttribute("inert", "");
-    sidebar?.setAttribute("inert", "");
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -186,7 +191,6 @@ export function JerseyColorEyedropperModal({
       document.removeEventListener("keydown", handleKeyDown);
       main?.removeAttribute("inert");
       header?.removeAttribute("inert");
-      sidebar?.removeAttribute("inert");
       previouslyFocusedRef.current?.focus();
     };
   }, [open, onClose]);

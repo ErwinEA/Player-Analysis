@@ -71,6 +71,16 @@ def test_finalize_closes_live_rally():
     assert len(tr.events) == 1
 
 
+def test_finalize_before_reset_preserves_live_rally():
+    tr = _tracker()
+    tr.update(0, (100.0, 400.0))
+    tr.update(1, (100.0, 405.0))
+    assert tr.state == "LIVE"
+    tr.finalize(2)
+    assert len(tr.events) == 1
+    assert tr.events[0].end_frame == 1
+
+
 def test_no_rally_without_consecutive_detections():
     tr = _tracker(live_frames=3)
     tr.update(0, (100.0, 400.0))

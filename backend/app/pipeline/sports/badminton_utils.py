@@ -2,17 +2,13 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any, Literal
 
+from backend.app.pipeline.matcher import color_lock_min_avg, color_lock_min_samples
 from backend.app.pipeline.pitch_homography import PitchCalibration
 
 CourtSide = Literal["near", "far"]
 RallyState = Literal["IDLE", "LIVE", "END"]
-
-_COLOR_LOCK_THRESHOLD = float(os.environ.get("COLOR_LOCK_THRESHOLD", "0.15"))
-_COLOR_MIN_FLOOR = float(os.environ.get("COLOR_MATCH_MIN", "0.05"))
-_COLOR_MIN_SAMPLES = 5
 
 
 def centroid_y(bbox: list[float]) -> float:
@@ -67,9 +63,10 @@ def best_color_track_id(color_scores: dict[int, list[float]]) -> int | None:
     """Track with highest average shirt-color score (matcher color-lock thresholds)."""
     best_id: int | None = None
     best_avg = 0.0
-    min_avg = max(_COLOR_LOCK_THRESHOLD, _COLOR_MIN_FLOOR)
+    min_avg = color_lock_min_avg()
+    min_samples = color_lock_min_samples()
     for track_id, scores in color_scores.items():
-        if len(scores) < _COLOR_MIN_SAMPLES:
+        if len(scores) < min_samples:
             continue
         avg = sum(scores) / len(scores)
         if avg > best_avg:

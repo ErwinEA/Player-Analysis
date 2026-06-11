@@ -16,6 +16,15 @@ def _color_min_floor() -> float:
     return float(os.environ.get("COLOR_MATCH_MIN", "0.05"))
 
 
+def color_lock_min_avg() -> float:
+    """Minimum mean shirt-color score to accept a color lock."""
+    return max(_color_lock_threshold(), _color_min_floor())
+
+
+def color_lock_min_samples() -> int:
+    return 5
+
+
 def _name_min_ratio() -> float:
     return float(os.environ.get("NAME_MIN_RATIO", "0.6"))
 

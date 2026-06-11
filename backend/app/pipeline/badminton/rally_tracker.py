@@ -49,6 +49,8 @@ class RallyTracker:
 
     Win attribution (MVP heuristic): the rally is lost by the side where the
     shuttle was last seen (it landed there), so the opposite side wins.
+    Assumes a standard broadcast view (near court = larger image Y below net).
+    Inverted or rotated feeds need a future calibration flag to flip sides.
     """
 
     net_y_px: float

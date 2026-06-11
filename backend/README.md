@@ -139,7 +139,7 @@ Set `"sport": "badminton"` in `details` with `courtSide` (`"near"` or `"far"`) a
 
 Uses the same `run_pipeline()` as `python -m backend.cli` (see [CLI](#cli-smoke-test-without-http)).
 
-**Pitch calibration:** same lookup as the CLI — `PITCH_CALIBRATION_NAME` (default `testmatch2`). The upload filename is **not** used to pick `{stem}.json` automatically. After saving pitch corners in the UI, the frontend sends optional form field `calibration_name` (e.g. `lozano` for `lozano.mp4`) so that saved JSON is tried first, then `testmatch2`.
+**Pitch calibration:** the dashboard sends `calibration_name` (video stem) only after court corners are saved for that upload. The CLI uses `calibration_keys_for_run()` with `PITCH_CALIBRATION_NAME` (default `testmatch2`) and optional `{upload_stem}.json` when the file exists — pass the same stem via env or align keys so HTTP and CLI runs match.
 
 Multipart form:
 

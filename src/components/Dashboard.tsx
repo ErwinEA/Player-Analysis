@@ -172,6 +172,7 @@ function getAnalyzeBlockers(
   video: File | null,
   sport: Sport,
   details: PlayerDetails,
+  calibrationReady: boolean,
 ): string[] {
   const blockers: string[] = [];
   if (apiStatus === "checking") blockers.push("Checking API…");
@@ -183,6 +184,9 @@ function getAnalyzeBlockers(
   if (sport === "badminton") {
     if (!details.courtSide) blockers.push("Select court side");
     if (!details.primaryJerseyColor) blockers.push("Pick shirt color");
+    if (video && !calibrationReady) {
+      blockers.push("Calibrate court layout");
+    }
   } else if (details.jerseyNumber <= 0) {
     blockers.push("Enter jersey number (1–99)");
   } else if (details.jerseyNumber > 99) {
@@ -288,7 +292,13 @@ export function Dashboard() {
     [sport],
   );
 
-  const blockers = getAnalyzeBlockers(apiStatus, video, sport, details);
+  const blockers = getAnalyzeBlockers(
+    apiStatus,
+    video,
+    sport,
+    details,
+    uploadCalibrationReady,
+  );
 
   const canAnalyze =
     apiStatus === "online" &&
@@ -313,12 +323,14 @@ export function Dashboard() {
 
     try {
       const renderVideo =
-        sport === "badminton" ||
         process.env.NEXT_PUBLIC_RENDER_ANALYZE_VIDEO === "1" ||
         process.env.NEXT_PUBLIC_RENDER_ANALYZE_VIDEO === "true";
       const payload: PlayerDetails = { ...details, sport };
       const response = await analyzeVideo(video, payload, {
-        calibrationName: videoCalibrationKey,
+        calibrationName:
+          uploadCalibrationReady && videoCalibrationKey
+            ? videoCalibrationKey
+            : null,
         renderVideo,
       });
       if (runId !== analyzeRunRef.current) return;

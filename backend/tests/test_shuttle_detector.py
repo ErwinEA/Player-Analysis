@@ -76,6 +76,57 @@ def test_shuttle_detect_survives_predict_failure(monkeypatch):
     assert det.detect(frame) is None
 
 
+def test_shuttle_kalman_update_returns_position():
+    from backend.app.pipeline.badminton.shuttle_detector import ShuttleKalman
+
+    k = ShuttleKalman()
+    px, py = k.update(100.0, 200.0)
+    assert isinstance(px, float) and isinstance(py, float)
+    # First update seeds the filter; output should be close to input.
+    assert abs(px - 100.0) < 5.0
+    assert abs(py - 200.0) < 5.0
+
+
+def test_shuttle_kalman_predict_extrapolates():
+    from backend.app.pipeline.badminton.shuttle_detector import ShuttleKalman
+
+    k = ShuttleKalman()
+    k.update(0.0, 0.0)
+    k.update(10.0, 5.0)
+    result = k.predict()
+    assert result is not None
+    px, py = result
+    # Predicted position should be ahead of last detection (nonzero velocity).
+    assert px > 5.0
+
+
+def test_shuttle_kalman_predict_returns_none_after_gap_max():
+    from backend.app.pipeline.badminton.shuttle_detector import ShuttleKalman
+
+    k = ShuttleKalman(gap_max=3)
+    k.update(50.0, 50.0)
+    for _ in range(3):
+        assert k.predict() is not None
+    # 4th predict (1 past gap_max) should reset and return None.
+    assert k.predict() is None
+
+
+def test_shuttle_kalman_reset_clears_state():
+    from backend.app.pipeline.badminton.shuttle_detector import ShuttleKalman
+
+    k = ShuttleKalman()
+    k.update(100.0, 100.0)
+    k.reset()
+    assert k.predict() is None
+
+
+def test_shuttle_kalman_predict_before_update_returns_none():
+    from backend.app.pipeline.badminton.shuttle_detector import ShuttleKalman
+
+    k = ShuttleKalman()
+    assert k.predict() is None
+
+
 def test_health_endpoint_includes_shuttle():
     from fastapi.testclient import TestClient
 

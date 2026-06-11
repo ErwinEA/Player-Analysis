@@ -631,13 +631,13 @@ def run_pipeline(
         badminton_net_y = height / 2.0
         shuttle_stride = max(1, int(os.environ.get("SHUTTLE_STRIDE", "1")))
         shuttle_samples: list[ShuttleSample] = []
-        last_overlay_shuttle_px: tuple[float, float] | None = None
-        last_overlay_shuttle_frame: int | None = None
-        overlay_shuttle_hold = max(
-            1, int(os.environ.get("SHUTTLE_OVERLAY_HOLD_FRAMES", "8"))
-        )
+        shuttle_kalman = None
+        shuttle_kalman_gap_max = max(1, int(os.environ.get("SHUTTLE_KALMAN_GAP_MAX", "15")))
         if is_badminton:
-            from backend.app.pipeline.badminton.shuttle_detector import ShuttleDetector
+            from backend.app.pipeline.badminton.shuttle_detector import (
+                ShuttleDetector,
+                ShuttleKalman,
+            )
 
             if calibration is not None:
                 from backend.app.pipeline.sports.badminton_utils import net_line_y_px
@@ -647,6 +647,7 @@ def run_pipeline(
                 except ValueError:
                     pass
             shuttle_detector = ShuttleDetector()
+            shuttle_kalman = ShuttleKalman(gap_max=shuttle_kalman_gap_max)
             if shuttle_detector.available:
                 from backend.app.pipeline.badminton.rally_tracker import RallyTracker
 
@@ -712,8 +713,11 @@ def run_pipeline(
                 if rally_tracker is not None:
                     from backend.app.pipeline.badminton.rally_tracker import RallyTracker
 
+                    rally_tracker.finalize(frame_idx)
                     rally_tracker = RallyTracker(net_y_px=badminton_net_y, fps=fps)
                     badminton_rally_state = "IDLE"
+                if shuttle_kalman is not None:
+                    shuttle_kalman.reset()
                 logger.info("Scene cut at frame %s — tracker/lock reset", frame_idx)
 
             skip_ball = scene_detector.is_suppressed
@@ -866,7 +870,7 @@ def run_pipeline(
                     )
                 )
 
-            if is_badminton and calibration is not None and not matcher.is_locked:
+            if is_badminton and not matcher.is_locked:
                 from backend.app.pipeline.sports.badminton_utils import (
                     disambiguate_with_fallback,
                     net_line_y_px,
@@ -879,9 +883,12 @@ def run_pipeline(
                 ]
                 court_side = details.courtSide
                 if court_side in ("near", "far"):
-                    try:
-                        net_y = net_line_y_px(calibration)
-                    except ValueError:
+                    if calibration is not None:
+                        try:
+                            net_y = net_line_y_px(calibration)
+                        except ValueError:
+                            net_y = height / 2.0
+                    else:
                         net_y = height / 2.0
                     tid, _lock_hint = disambiguate_with_fallback(
                         mature_tracks,
@@ -1220,13 +1227,15 @@ def run_pipeline(
 
             shuttle_px_frame: tuple[float, float] | None = None
             overlay_shuttle_px: tuple[float, float] | None = None
-            if rally_tracker is not None and shuttle_detector is not None:
+            if shuttle_detector is not None and shuttle_kalman is not None:
                 if shuttle_stride <= 1 or frame_idx % shuttle_stride == 0:
                     shuttle_det = shuttle_detector.detect(frame)
                     if shuttle_det is not None:
                         shuttle_px_frame = shuttle_det.center_px
-                        last_overlay_shuttle_px = shuttle_px_frame
-                        last_overlay_shuttle_frame = frame_idx
+                        smooth_px = shuttle_kalman.update(
+                            shuttle_det.center_px[0], shuttle_det.center_px[1]
+                        )
+                        overlay_shuttle_px = smooth_px
                         shuttle_samples.append(
                             ShuttleSample(
                                 frame=frame_idx,
@@ -1235,23 +1244,25 @@ def run_pipeline(
                                 conf=round(shuttle_det.conf, 3),
                             )
                         )
+                    else:
+                        overlay_shuttle_px = shuttle_kalman.predict()
+                else:
+                    # Stride skip: advance the Kalman prediction so it stays current.
+                    overlay_shuttle_px = shuttle_kalman.predict()
+
                 locked_foot_px: tuple[float, float] | None = None
                 if matcher.lock is not None:
                     for tr in tracks:
                         if tr["track_id"] == matcher.lock.track_id:
                             locked_foot_px = foot_position_pixels(tr["bbox"])
                             break
-                badminton_rally_state = rally_tracker.update(
-                    frame_idx, shuttle_px_frame, locked_foot_px
-                )
-                if shuttle_px_frame is not None:
-                    overlay_shuttle_px = shuttle_px_frame
-                elif (
-                    last_overlay_shuttle_px is not None
-                    and last_overlay_shuttle_frame is not None
-                    and frame_idx - last_overlay_shuttle_frame <= overlay_shuttle_hold
-                ):
-                    overlay_shuttle_px = last_overlay_shuttle_px
+                if rally_tracker is not None:
+                    rally_shuttle_px = shuttle_px_frame
+                    if rally_shuttle_px is None:
+                        rally_shuttle_px = overlay_shuttle_px
+                    badminton_rally_state = rally_tracker.update(
+                        frame_idx, rally_shuttle_px, locked_foot_px
+                    )
 
             if video_writer is not None:
                 frame_lock = matcher.lock
@@ -1338,6 +1349,17 @@ def run_pipeline(
 
         duration_s = frame_idx / fps if fps > 0 else 0.0
         final_lock = matcher.finalize()
+
+        if (
+            final_lock is not None
+            and locked_at_frame is None
+            and final_lock.track_id is not None
+        ):
+            track_frames = [
+                r.frame for r in rows if r.track == final_lock.track_id
+            ]
+            if track_frames:
+                locked_at_frame = min(track_frames)
 
         if final_lock is not None and (details.jerseyNumber > 0 or is_badminton):
             target_id = final_lock.track_id
@@ -1474,9 +1496,16 @@ def run_pipeline(
             )
         elif not masks_available and target.method == "none":
             if is_badminton:
-                masks_unavailable_reason = (
-                    "No player lock — select court side and shirt color, then re-run Analyze."
-                )
+                if calibration is None:
+                    masks_unavailable_reason = (
+                        "No player lock — calibrate court layout, set court side and "
+                        "shirt color, then re-run Analyze."
+                    )
+                else:
+                    masks_unavailable_reason = (
+                        "No player lock — select court side and shirt color, then "
+                        "re-run Analyze."
+                    )
             else:
                 masks_unavailable_reason = (
                     "No player lock — enter the correct jersey number (and optional name/"

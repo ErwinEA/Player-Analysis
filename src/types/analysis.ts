@@ -103,13 +103,14 @@ export type ShuttleSample = {
 };
 
 export type BadmintonStats = {
-  rally_wins: number | null;
   total_rallies: number | null;
-  win_rate_pct: number | null;
-  court_coverage_km: number | null;
   avg_rally_duration_s: number | null;
-  winners: number | null;
-  movement_speed_ms: number | null;
+  longest_rally_duration_s: number | null;
+  points_won_on_serve: number | null;
+  points_won_on_return: number | null;
+  total_points_won: number | null;
+  points_in: number | null;
+  points_out: number | null;
 };
 
 export type AnalyzeResponse = {

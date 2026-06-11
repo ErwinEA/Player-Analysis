@@ -5,8 +5,16 @@ from backend.app.pipeline.sports.badminton_utils import (
     centroid_y,
     disambiguate_by_court_side,
     disambiguate_with_fallback,
+    dominant_court_half,
+    filter_positions_to_court_half,
+    filter_rows_by_court_side,
+    mask_grid_to_court_half,
+    net_line_x_m,
     net_line_y_px,
+    position_in_court_half,
+    row_on_court_side,
 )
+from backend.app.schemas import Row
 
 
 def _cal(w: int = 1280, h: int = 720):
@@ -76,6 +84,92 @@ def test_apply_color_lock_sets_method():
     assert lock.method == "color"
     assert matcher.lock is not None
     assert matcher.lock.method == "color"
+
+
+def test_row_on_court_side_uses_foot_y():
+    net_y = 360.0
+    near_row = Row(
+        t=0.0,
+        frame=0,
+        track=1,
+        player=None,
+        x=0.5,
+        y=0.7,
+        bbox=[100.0, 400.0, 200.0, 500.0],
+        foot_y=0.75,
+    )
+    far_row = Row(
+        t=0.0,
+        frame=1,
+        track=2,
+        player=None,
+        x=0.5,
+        y=0.2,
+        bbox=[100.0, 100.0, 200.0, 200.0],
+        foot_y=0.15,
+    )
+    assert row_on_court_side(near_row, "near", net_y, image_height=720)
+    assert not row_on_court_side(far_row, "near", net_y, image_height=720)
+    assert row_on_court_side(far_row, "far", net_y, image_height=720)
+
+
+def test_filter_rows_by_court_side_drops_opponent():
+    cal = _cal()
+    net_y = net_line_y_px(cal)
+    rows = [
+        Row(
+            t=0.0,
+            frame=0,
+            track=1,
+            player=None,
+            x=0.5,
+            y=0.7,
+            bbox=[100.0, 400.0, 200.0, 500.0],
+            foot_y=(net_y + 50.0) / 720.0,
+        ),
+        Row(
+            t=0.1,
+            frame=1,
+            track=2,
+            player=None,
+            x=0.5,
+            y=0.2,
+            bbox=[100.0, 100.0, 200.0, 200.0],
+            foot_y=(net_y - 50.0) / 720.0,
+        ),
+    ]
+    near_only = filter_rows_by_court_side(rows, cal, "near")
+    assert len(near_only) == 1
+    assert near_only[0].track == 1
+
+
+def test_position_in_court_half():
+    cal = _cal()
+    mid = net_line_x_m(cal)
+    assert position_in_court_half(mid * 0.25, cal, "low")
+    assert not position_in_court_half(mid * 1.75, cal, "low")
+    assert position_in_court_half(mid * 1.75, cal, "high")
+
+
+def test_dominant_court_half_and_filter():
+    cal = _cal()
+    mid = net_line_x_m(cal)
+    positions = [(mid * 0.3, 3.0)] * 8 + [(mid * 1.7, 3.0)] * 2
+    assert dominant_court_half(positions, cal) == "low"
+    kept = filter_positions_to_court_half(positions, cal, "near")
+    assert len(kept) == 8
+    assert all(x < mid for x, _ in kept)
+
+
+def test_mask_grid_to_court_half_zeros_opponent_columns():
+    import numpy as np
+
+    cal = _cal()
+    grid = np.ones((34, 53), dtype=np.float32)
+    masked = mask_grid_to_court_half(grid, cal, "low")
+    mid_col = 53 // 2
+    assert masked[:, :mid_col].sum() > 0
+    assert masked[:, mid_col + 1 :].sum() == 0.0
 
 
 def test_color_fallback_rejects_weak_scores():

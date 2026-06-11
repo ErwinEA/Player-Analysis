@@ -1,18 +1,23 @@
-"""Badminton metrics derived from movement and rally detection."""
+"""Badminton metrics derived from rally detection."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from backend.app.schemas import BadmintonStats, MovementStats, TargetMatch
+from backend.app.schemas import BadmintonStats, TargetMatch
 
 if TYPE_CHECKING:
     from backend.app.pipeline.badminton.rally_tracker import RallyEvent
 
 
+def _rally_duration_s(ev: "RallyEvent", fps: float) -> float:
+    if fps <= 0:
+        return 0.0
+    return (ev.end_frame - ev.start_frame) / fps
+
+
 def build_badminton_stats(
     *,
-    movement: MovementStats | None,
     target: TargetMatch,
     has_calibration: bool,
     rally_events: list["RallyEvent"] | None = None,
@@ -28,50 +33,56 @@ def build_badminton_stats(
     if not has_calibration:
         return None, "no_calibration"
 
-    court_coverage_km: float | None = None
-    movement_speed_ms: float | None = None
-    if movement is not None and movement.units == "meters":
-        court_coverage_km = round(movement.distance_m / 1000.0, 3)
-        movement_speed_ms = round(movement.avg_speed_m_s, 3)
-
-    rally_wins: int | None = None
     total_rallies: int | None = None
-    win_rate_pct: float | None = None
     avg_rally_duration_s: float | None = None
-    winners: int | None = None
+    longest_rally_duration_s: float | None = None
+    points_won_on_serve: int | None = None
+    points_won_on_return: int | None = None
+    total_points_won: int | None = None
+    points_in: int | None = None
+    points_out: int | None = None
     reason: str | None
 
     if rally_events:
         total_rallies = len(rally_events)
-        rally_wins = sum(
-            1 for ev in rally_events if ev.winner_side == court_side
-        )
-        win_rate_pct = round(rally_wins / total_rallies * 100.0, 1)
-        if fps > 0:
-            avg_rally_duration_s = round(
-                sum((ev.end_frame - ev.start_frame) / fps for ev in rally_events)
-                / total_rallies,
-                2,
-            )
-        winners = sum(
-            1
-            for ev in rally_events
-            if ev.winner_side == court_side and ev.locked_player_touched_last
-        )
+        durations = [_rally_duration_s(ev, fps) for ev in rally_events]
+        if durations:
+            avg_rally_duration_s = round(sum(durations) / len(durations), 2)
+            longest_rally_duration_s = round(max(durations), 2)
+
+        serve_wins = 0
+        return_wins = 0
+        won = 0
+        lost = 0
+        for ev in rally_events:
+            if ev.winner_side == court_side:
+                won += 1
+                if ev.serving_side == court_side:
+                    serve_wins += 1
+                else:
+                    return_wins += 1
+            elif ev.winner_side not in (None, "", "unknown"):
+                lost += 1
+
+        points_won_on_serve = serve_wins
+        points_won_on_return = return_wins
+        total_points_won = won
+        points_in = won
+        points_out = lost
         reason = None
     elif not shuttle_available:
         reason = "no_shuttle_weights"
     else:
-        # Detector ran but found no rallies in this clip.
         reason = "rally_detection_pending"
 
     stats = BadmintonStats(
-        rally_wins=rally_wins,
         total_rallies=total_rallies,
-        win_rate_pct=win_rate_pct,
-        court_coverage_km=court_coverage_km,
         avg_rally_duration_s=avg_rally_duration_s,
-        winners=winners,
-        movement_speed_ms=movement_speed_ms,
+        longest_rally_duration_s=longest_rally_duration_s,
+        points_won_on_serve=points_won_on_serve,
+        points_won_on_return=points_won_on_return,
+        total_points_won=total_points_won,
+        points_in=points_in,
+        points_out=points_out,
     )
     return stats, reason

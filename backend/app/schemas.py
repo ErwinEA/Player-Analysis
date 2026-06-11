@@ -140,13 +140,14 @@ class ShuttleSample(BaseModel):
 
 
 class BadmintonStats(BaseModel):
-    rally_wins: int | None = None
     total_rallies: int | None = None
-    win_rate_pct: float | None = None
-    court_coverage_km: float | None = None
     avg_rally_duration_s: float | None = None
-    winners: int | None = None
-    movement_speed_ms: float | None = None
+    longest_rally_duration_s: float | None = None
+    points_won_on_serve: int | None = None
+    points_won_on_return: int | None = None
+    total_points_won: int | None = None
+    points_in: int | None = None
+    points_out: int | None = None
 
 
 class InferredBallEvent(BaseModel):

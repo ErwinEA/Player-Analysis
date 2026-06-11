@@ -1265,11 +1265,10 @@ def run_pipeline(
                             locked_foot_px = foot_position_pixels(tr["bbox"])
                             break
                 if rally_tracker is not None:
-                    rally_shuttle_px = shuttle_px_frame
-                    if rally_shuttle_px is None and not shuttle_scene_suppressed:
-                        rally_shuttle_px = overlay_shuttle_px
+                    # Rally segmentation uses raw detections only so Kalman fill
+                    # cannot mask landing gaps between points.
                     badminton_rally_state = rally_tracker.update(
-                        frame_idx, rally_shuttle_px, locked_foot_px
+                        frame_idx, shuttle_px_frame, locked_foot_px
                     )
 
             if video_writer is not None:
@@ -1557,7 +1556,17 @@ def run_pipeline(
             if stats.units == "meters":
                 movement = MovementStatsSchema(**stats.to_dict())
         if analytics_rows and calibration is not None:
-            hm = build_heatmap_from_rows(analytics_rows, calibration, fps=fps)
+            hm_court_side = (
+                details.courtSide
+                if is_badminton and details.courtSide in ("near", "far")
+                else None
+            )
+            hm = build_heatmap_from_rows(
+                analytics_rows,
+                calibration,
+                fps=fps,
+                court_side=hm_court_side,
+            )
             heatmap = HeatmapResult(**hm.to_dict())
             if hm.sample_count == 0 and calibration_skipped_reason is None:
                 calibration_skipped_reason = "positions_out_of_bounds"
@@ -1568,7 +1577,6 @@ def run_pipeline(
             if rally_tracker is not None:
                 rally_tracker.finalize(frame_idx)
             badminton_stats, badminton_stats_unavailable_reason = build_badminton_stats(
-                movement=movement,
                 target=target,
                 has_calibration=calibration is not None,
                 rally_events=(

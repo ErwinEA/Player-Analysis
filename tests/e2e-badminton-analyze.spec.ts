@@ -71,8 +71,8 @@ test.describe("Full badminton analyze flow (videoplayback)", () => {
     });
 
     const metrics = page.getByRole("region", { name: "Player Metrics" });
-    await expect(metrics.getByText(/km moved/i)).toBeVisible();
-    await expect(metrics.locator("definition").first()).not.toHaveText(/^—$/);
+    await expect(metrics.getByText("Total rallies", { exact: true })).toBeVisible();
+    await expect(metrics.getByText("In / out calls", { exact: true })).toBeVisible();
 
     const maskToggle = page.getByRole("checkbox", {
       name: /Show player mask/i,

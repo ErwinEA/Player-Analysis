@@ -17,21 +17,25 @@ export const EMPTY_METRICS: PlayerMetrics = {
 };
 
 export type BadmintonMetrics = {
-  rallyWins: number | null;
-  winRatePct: number | null;
-  courtCoverageKm: number | null;
+  totalRallies: number | null;
   avgRallyDurationS: number | null;
-  winners: number | null;
-  movementSpeedMs: number | null;
+  longestRallyS: number | null;
+  pointsWonOnServe: number | null;
+  pointsWonOnReturn: number | null;
+  totalPointsWon: number | null;
+  pointsIn: number | null;
+  pointsOut: number | null;
 };
 
 export const EMPTY_BADMINTON_METRICS: BadmintonMetrics = {
-  rallyWins: null,
-  winRatePct: null,
-  courtCoverageKm: null,
+  totalRallies: null,
   avgRallyDurationS: null,
-  winners: null,
-  movementSpeedMs: null,
+  longestRallyS: null,
+  pointsWonOnServe: null,
+  pointsWonOnReturn: null,
+  totalPointsWon: null,
+  pointsIn: null,
+  pointsOut: null,
 };
 
 export type GameplayAnalysis = {

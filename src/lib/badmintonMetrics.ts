@@ -6,34 +6,18 @@ export function badmintonMetricsFromResult(
   result: AnalyzeResponse,
 ): BadmintonMetrics {
   const stats = result.badminton_stats;
-  if (stats) {
-    const winRatePct =
-      stats.win_rate_pct ??
-      (stats.rally_wins != null &&
-      stats.total_rallies != null &&
-      stats.total_rallies > 0
-        ? Math.round((stats.rally_wins / stats.total_rallies) * 1000) / 10
-        : null);
-    return {
-      rallyWins: stats.rally_wins,
-      winRatePct,
-      courtCoverageKm: stats.court_coverage_km,
-      avgRallyDurationS: stats.avg_rally_duration_s,
-      winners: stats.winners,
-      movementSpeedMs: stats.movement_speed_ms,
-    };
-  }
-
-  const movement = result.movement;
-  if (!movement || movement.units !== "meters") {
+  if (!stats) {
     return EMPTY_BADMINTON_METRICS;
   }
-
   return {
-    ...EMPTY_BADMINTON_METRICS,
-    courtCoverageKm:
-      Math.round((movement.distance_m / 1000) * 100) / 100,
-    movementSpeedMs: Math.round(movement.avg_speed_m_s * 100) / 100,
+    totalRallies: stats.total_rallies,
+    avgRallyDurationS: stats.avg_rally_duration_s,
+    longestRallyS: stats.longest_rally_duration_s,
+    pointsWonOnServe: stats.points_won_on_serve,
+    pointsWonOnReturn: stats.points_won_on_return,
+    totalPointsWon: stats.total_points_won,
+    pointsIn: stats.points_in,
+    pointsOut: stats.points_out,
   };
 }
 
@@ -51,10 +35,10 @@ export function badmintonMetricsWarning(
     return "Rally stats need a confident player lock via court side or shirt color.";
   }
   if (reason === "no_shuttle_weights") {
-    return "Rally stats need shuttle detection weights: add yolov8m_shuttlecock.pt to backend/weights (see backend/weights/README.md). Movement stats use tracking data.";
+    return "Rally stats need shuttle detection weights: add yolov8m_shuttlecock.pt to backend/weights (see backend/weights/README.md).";
   }
   if (reason === "rally_detection_pending") {
-    return "No rallies detected in this clip — rally wins, win rate, duration, and winners are unavailable. Movement stats use tracking data.";
+    return "No rallies detected in this clip — match rally metrics are unavailable.";
   }
   if (result.calibration_skipped_reason === "positions_out_of_bounds") {
     return "Court calibration is off: player positions fall outside the court. Recalibrate, then re-run Analyze.";
@@ -64,7 +48,7 @@ export function badmintonMetricsWarning(
     return "Could not lock onto this player. Pick court side and shirt color, then re-run Analyze.";
   }
   if (method === "color" || result.heatmap_source === "fallback_track") {
-    return "Player lock used shirt color only (court side was ambiguous). Treat movement and heat map as approximate.";
+    return "Player lock used shirt color only (court side was ambiguous). Treat heat map as approximate.";
   }
   return null;
 }

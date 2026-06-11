@@ -5,10 +5,12 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from backend.app.pipeline.matcher import color_lock_min_avg, color_lock_min_samples
-from backend.app.pipeline.pitch_homography import PitchCalibration
+from backend.app.pipeline.pitch_homography import PitchCalibration, is_badminton_court
 
 CourtSide = Literal["near", "far"]
 RallyState = Literal["IDLE", "LIVE", "END"]
+
+_NET_MARGIN_M = 0.08
 
 
 def centroid_y(bbox: list[float]) -> float:
@@ -96,3 +98,131 @@ def disambiguate_with_fallback(
     if color_id is not None:
         return color_id, "color"
     return None, "none"
+
+
+def net_line_x_m(calibration: PitchCalibration) -> float:
+    """Net position along court length in top-down metres (vertical net on template)."""
+    return calibration.pitch_length_m / 2.0
+
+
+CourtHalf = Literal["low", "high"]
+
+
+def _row_image_y(
+    row: Any,
+    image_height: int,
+) -> float | None:
+    """Image Y for court-side checks: foot when available, else bbox centroid."""
+    foot_y = row.foot_y if hasattr(row, "foot_y") else row.get("foot_y")
+    if foot_y is not None:
+        return float(foot_y) * image_height
+    bbox = row.bbox if hasattr(row, "bbox") else row.get("bbox")
+    if bbox and len(bbox) >= 4:
+        return centroid_y(bbox)
+    return None
+
+
+def row_on_court_side(
+    row: Any,
+    court_side: CourtSide | str,
+    net_y_px: float,
+    *,
+    image_height: int,
+) -> bool:
+    """True when the row's foot/centroid lies on the selected broadcast court side."""
+    if court_side not in ("near", "far"):
+        return True
+    py = _row_image_y(row, image_height)
+    if py is None:
+        return False
+    on_near = _on_near_side(py, net_y_px)
+    return on_near if court_side == "near" else not on_near
+
+
+def filter_rows_by_court_side(
+    rows: list[Any],
+    calibration: PitchCalibration,
+    court_side: CourtSide | str,
+) -> list[Any]:
+    """Drop rows whose image foot position is on the opponent's court side."""
+    if court_side not in ("near", "far"):
+        return rows
+    if not is_badminton_court(calibration.pitch_length_m, calibration.pitch_width_m):
+        return rows
+    net_y = net_line_y_px(calibration)
+    _, image_height = calibration.image_size
+    return [
+        row
+        for row in rows
+        if row_on_court_side(
+            row, court_side, net_y, image_height=image_height
+        )
+    ]
+
+
+def dominant_court_half(
+    positions: list[tuple[float, float]],
+    calibration: PitchCalibration,
+) -> CourtHalf:
+    """Which side of the net (low/high X) holds most metre samples for one player."""
+    mid_x = net_line_x_m(calibration)
+    low = sum(1 for x_m, _ in positions if x_m < mid_x)
+    return "low" if low * 2 >= len(positions) else "high"
+
+
+def position_in_court_half(
+    x_m: float,
+    calibration: PitchCalibration,
+    half: CourtHalf,
+) -> bool:
+    """True when metre X lies on the chosen court half (net at length/2)."""
+    mid_x = net_line_x_m(calibration)
+    margin = _NET_MARGIN_M
+    if half == "low":
+        return x_m < mid_x - margin
+    return x_m > mid_x + margin
+
+
+def filter_positions_to_court_half(
+    positions: list[tuple[float, float]],
+    calibration: PitchCalibration,
+    court_side: CourtSide | str,
+) -> list[tuple[float, float]]:
+    """Keep metre samples on the locked player's dominant court half.
+
+    Broadcast homography can fan one court side across both halves of court length;
+    for a single locked player the true half is the majority cluster at x = length/2.
+    """
+    if court_side not in ("near", "far"):
+        return positions
+    if not is_badminton_court(calibration.pitch_length_m, calibration.pitch_width_m):
+        return positions
+    if len(positions) < 2:
+        return positions
+    half = dominant_court_half(positions, calibration)
+    return [
+        (x_m, y_m)
+        for x_m, y_m in positions
+        if position_in_court_half(x_m, calibration, half)
+    ]
+
+
+def mask_grid_to_court_half(
+    grid: Any,
+    calibration: PitchCalibration,
+    half: CourtHalf,
+) -> Any:
+    """Zero grid cells on the opponent's court half (prevents Gaussian net bleed)."""
+    if not is_badminton_court(calibration.pitch_length_m, calibration.pitch_width_m):
+        return grid
+    _, cols = grid.shape
+    length_m = calibration.pitch_length_m
+    mid_x = net_line_x_m(calibration)
+    cell_x = length_m / cols
+    masked = grid.copy()
+    for col in range(cols):
+        cell_center_x = (col + 0.5) * cell_x
+        keep = cell_center_x < mid_x if half == "low" else cell_center_x > mid_x
+        if not keep:
+            masked[:, col] = 0.0
+    return masked

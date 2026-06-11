@@ -26,7 +26,10 @@ type PlayerMetricsPanelProps = {
 };
 
 type FootballMetricKey = keyof PlayerMetrics;
-type BadmintonMetricKey = keyof BadmintonMetrics;
+type BadmintonScalarKey =
+  | "totalRallies"
+  | "avgRallyDurationS"
+  | "longestRallyS";
 
 type MetricConfig<K extends string> = {
   key: K;
@@ -35,6 +38,11 @@ type MetricConfig<K extends string> = {
   unit?: string;
   Icon: ComponentType<{ className?: string }>;
 };
+
+type BadmintonMetricItem =
+  | (MetricConfig<BadmintonScalarKey> & { kind: "scalar" })
+  | { kind: "serveReturn"; label: string; caption: string; Icon: ComponentType<{ className?: string }> }
+  | { kind: "inOut"; label: string; caption: string; Icon: ComponentType<{ className?: string }> };
 
 const FOOTBALL_METRIC_CONFIG: MetricConfig<FootballMetricKey>[] = [
   { key: "goals", label: "Goals", caption: "expected", Icon: GoalIcon },
@@ -57,30 +65,41 @@ const FOOTBALL_METRIC_CONFIG: MetricConfig<FootballMetricKey>[] = [
   },
 ];
 
-const BADMINTON_METRIC_CONFIG: MetricConfig<BadmintonMetricKey>[] = [
-  { key: "rallyWins", label: "Rally wins", caption: "rallies won", Icon: GoalIcon },
-  { key: "winRatePct", label: "Win rate", caption: "rallies won %", unit: "%", Icon: TargetIcon },
+const BADMINTON_METRIC_CONFIG: BadmintonMetricItem[] = [
   {
-    key: "courtCoverageKm",
-    label: "Court coverage",
-    caption: "km moved",
-    unit: "km",
-    Icon: LocationIcon,
+    kind: "scalar",
+    key: "totalRallies",
+    label: "Total rallies",
+    caption: "full match",
+    Icon: GoalIcon,
   },
   {
+    kind: "scalar",
     key: "avgRallyDurationS",
     label: "Avg rally duration",
-    caption: "seconds",
+    caption: "mean seconds",
     unit: "s",
     Icon: RulerIcon,
   },
-  { key: "winners", label: "Winners", caption: "unreturnable", Icon: DriveIcon },
   {
-    key: "movementSpeedMs",
-    label: "Movement speed",
-    caption: "avg movement speed",
-    unit: "m/s",
+    kind: "scalar",
+    key: "longestRallyS",
+    label: "Longest rally",
+    caption: "peak seconds",
+    unit: "s",
+    Icon: TargetIcon,
+  },
+  {
+    kind: "serveReturn",
+    label: "Points on serve vs return",
+    caption: "won points split",
     Icon: PassIcon,
+  },
+  {
+    kind: "inOut",
+    label: "In / out calls",
+    caption: "points won vs lost",
+    Icon: DriveIcon,
   },
 ];
 
@@ -102,28 +121,50 @@ function formatFootballValue(
   return unit ? `${value} ${unit}` : String(value);
 }
 
-function formatBadmintonValue(
-  key: BadmintonMetricKey,
+function formatBadmintonScalar(
+  key: BadmintonScalarKey,
   value: number | null,
   unit?: string,
 ): string {
   if (value === null || !Number.isFinite(value)) return "—";
-  if (key === "courtCoverageKm") {
-    return `${value.toFixed(2)} ${unit ?? "km"}`;
-  }
-  if (key === "winRatePct") {
-    return `${value.toFixed(1)}${unit ?? "%"}`;
-  }
-  if (key === "avgRallyDurationS" || key === "movementSpeedMs") {
-    return `${value.toFixed(2)} ${unit ?? ""}`.trim();
+  if (
+    key === "avgRallyDurationS" ||
+    key === "longestRallyS"
+  ) {
+    return `${value.toFixed(2)} ${unit ?? "s"}`.trim();
   }
   return unit ? `${value} ${unit}` : String(value);
 }
 
-function countPopulated(metrics: Record<string, number | null>): number {
+function formatServeReturn(metrics: BadmintonMetrics): string {
+  const total = metrics.totalPointsWon;
+  const serve = metrics.pointsWonOnServe;
+  const ret = metrics.pointsWonOnReturn;
+  if (
+    total === null ||
+    serve === null ||
+    ret === null ||
+    !Number.isFinite(total)
+  ) {
+    return "—";
+  }
+  return `${serve}/${total} serve, ${ret}/${total} return`;
+}
+
+function countFootballPopulated(metrics: PlayerMetrics): number {
   return Object.values(metrics).filter(
     (value) => value !== null && Number.isFinite(value),
   ).length;
+}
+
+function countBadmintonPopulated(metrics: BadmintonMetrics): number {
+  let count = 0;
+  if (metrics.totalRallies !== null) count += 1;
+  if (metrics.avgRallyDurationS !== null) count += 1;
+  if (metrics.longestRallyS !== null) count += 1;
+  if (metrics.totalPointsWon !== null) count += 1;
+  if (metrics.pointsIn !== null || metrics.pointsOut !== null) count += 1;
+  return count;
 }
 
 function buildCompletionMessage(
@@ -132,8 +173,9 @@ function buildCompletionMessage(
   badmintonMetrics: BadmintonMetrics,
 ): string {
   const isBadminton = sport === "badminton";
-  const active = isBadminton ? badmintonMetrics : metrics;
-  const populated = countPopulated(active as Record<string, number | null>);
+  const populated = isBadminton
+    ? countBadmintonPopulated(badmintonMetrics)
+    : countFootballPopulated(metrics);
   const total = isBadminton
     ? BADMINTON_METRIC_CONFIG.length
     : FOOTBALL_METRIC_CONFIG.length;
@@ -141,6 +183,29 @@ function buildCompletionMessage(
     return "Analysis complete. No player metrics available yet.";
   }
   return `Analysis complete. ${populated} of ${total} player metrics available.`;
+}
+
+function hasBadmintonScalar(
+  metrics: BadmintonMetrics,
+  key: BadmintonScalarKey,
+): boolean {
+  const value = metrics[key];
+  return value !== null && Number.isFinite(value);
+}
+
+function hasServeReturn(metrics: BadmintonMetrics): boolean {
+  return (
+    metrics.totalPointsWon !== null &&
+    metrics.pointsWonOnServe !== null &&
+    metrics.pointsWonOnReturn !== null
+  );
+}
+
+function hasInOut(metrics: BadmintonMetrics): boolean {
+  return (
+    (metrics.pointsIn !== null && Number.isFinite(metrics.pointsIn)) ||
+    (metrics.pointsOut !== null && Number.isFinite(metrics.pointsOut))
+  );
 }
 
 export function PlayerMetricsPanel({
@@ -154,12 +219,13 @@ export function PlayerMetricsPanel({
   metricsWarning,
 }: PlayerMetricsPanelProps) {
   const isBadminton = sport === "badminton";
-  const activeMetrics = isBadminton ? badmintonMetrics : metrics;
   const pendingBackend =
     hasResult &&
     !isLoading &&
     !metricsWarning &&
-    countPopulated(activeMetrics as Record<string, number | null>) === 0;
+    (isBadminton
+      ? countBadmintonPopulated(badmintonMetrics) === 0
+      : countFootballPopulated(metrics) === 0);
 
   const [completionMessage, setCompletionMessage] = useState("");
   const wasLoadingRef = useRef(false);
@@ -177,10 +243,7 @@ export function PlayerMetricsPanel({
     }
   }, [isLoading, hasResult, errorMessage, sport, metrics, badmintonMetrics]);
 
-  const metricConfig = useMemo(
-    () => (isBadminton ? BADMINTON_METRIC_CONFIG : FOOTBALL_METRIC_CONFIG),
-    [isBadminton],
-  );
+  const footballConfig = useMemo(() => FOOTBALL_METRIC_CONFIG, []);
 
   return (
     <section
@@ -241,36 +304,152 @@ export function PlayerMetricsPanel({
 
       {!isLoading && !errorMessage && (
         <ul className={styles.grid} role="list" aria-label="Player metrics">
-          {metricConfig.map(({ key, label, caption, unit, Icon }) => {
-            const value = (activeMetrics as Record<string, number | null>)[key];
-            const display = isBadminton
-              ? formatBadmintonValue(key as BadmintonMetricKey, value, unit)
-              : formatFootballValue(key as FootballMetricKey, value, unit);
-            const hasValue = value !== null && Number.isFinite(value);
-            return (
-              <li key={key} className={styles.metric} role="listitem">
-                <div className={styles.metricTop}>
-                  <span className={styles.metricLabel}>{label}</span>
-                  <span className={styles.metricIcon} aria-hidden="true">
-                    <Icon className={styles.metricIconSvg} />
-                  </span>
-                </div>
-                <p className={styles.metricValue}>
-                  <span className="srOnly">{label}: </span>
-                  {display}
-                  {!hasValue && <span className="srOnly">, no data yet</span>}
-                </p>
-                <span className={styles.metricCaption} aria-hidden="true">
-                  {caption}
-                </span>
-                <span className={styles.track} aria-hidden="true">
-                  <span
-                    className={`${styles.trackFill} ${hasValue ? styles.trackFillActive : ""}`}
-                  />
-                </span>
-              </li>
-            );
-          })}
+          {isBadminton
+            ? BADMINTON_METRIC_CONFIG.map((item) => {
+                const { label, caption, Icon } = item;
+                if (item.kind === "scalar") {
+                  const value = badmintonMetrics[item.key];
+                  const display = formatBadmintonScalar(
+                    item.key,
+                    value,
+                    item.unit,
+                  );
+                  const hasValue = hasBadmintonScalar(badmintonMetrics, item.key);
+                  return (
+                    <li key={item.key} className={styles.metric} role="listitem">
+                      <div className={styles.metricTop}>
+                        <span className={styles.metricLabel}>{label}</span>
+                        <span className={styles.metricIcon} aria-hidden="true">
+                          <Icon className={styles.metricIconSvg} />
+                        </span>
+                      </div>
+                      <p className={styles.metricValue}>
+                        <span className="srOnly">{label}: </span>
+                        {display}
+                        {!hasValue && (
+                          <span className="srOnly">, no data yet</span>
+                        )}
+                      </p>
+                      <span className={styles.metricCaption} aria-hidden="true">
+                        {caption}
+                      </span>
+                      <span className={styles.track} aria-hidden="true">
+                        <span
+                          className={`${styles.trackFill} ${hasValue ? styles.trackFillActive : ""}`}
+                        />
+                      </span>
+                    </li>
+                  );
+                }
+
+                if (item.kind === "serveReturn") {
+                  const display = formatServeReturn(badmintonMetrics);
+                  const hasValue = hasServeReturn(badmintonMetrics);
+                  return (
+                    <li
+                      key="serveReturn"
+                      className={styles.metric}
+                      role="listitem"
+                    >
+                      <div className={styles.metricTop}>
+                        <span className={styles.metricLabel}>{label}</span>
+                        <span className={styles.metricIcon} aria-hidden="true">
+                          <Icon className={styles.metricIconSvg} />
+                        </span>
+                      </div>
+                      <p className={styles.metricValue}>
+                        <span className="srOnly">{label}: </span>
+                        {display}
+                        {!hasValue && (
+                          <span className="srOnly">, no data yet</span>
+                        )}
+                      </p>
+                      <span className={styles.metricCaption} aria-hidden="true">
+                        {caption}
+                      </span>
+                      <span className={styles.track} aria-hidden="true">
+                        <span
+                          className={`${styles.trackFill} ${hasValue ? styles.trackFillActive : ""}`}
+                        />
+                      </span>
+                    </li>
+                  );
+                }
+
+                const inVal = badmintonMetrics.pointsIn;
+                const outVal = badmintonMetrics.pointsOut;
+                const hasValue = hasInOut(badmintonMetrics);
+                return (
+                  <li key="inOut" className={styles.metric} role="listitem">
+                    <div className={styles.metricTop}>
+                      <span className={styles.metricLabel}>{label}</span>
+                      <span className={styles.metricIcon} aria-hidden="true">
+                        <Icon className={styles.metricIconSvg} />
+                      </span>
+                    </div>
+                    <div
+                      className={styles.inOutSplit}
+                      aria-label={
+                        hasValue
+                          ? `In ${inVal ?? 0}, out ${outVal ?? 0}`
+                          : "In out calls unavailable"
+                      }
+                    >
+                      <span className={styles.inOutSide}>
+                        <span className={styles.inOutLabel}>In</span>
+                        <span className={styles.inOutValueIn}>
+                          {inVal ?? "—"}
+                        </span>
+                      </span>
+                      <span className={styles.inOutDivider} aria-hidden="true" />
+                      <span className={styles.inOutSide}>
+                        <span className={styles.inOutLabel}>Out</span>
+                        <span className={styles.inOutValueOut}>
+                          {outVal ?? "—"}
+                        </span>
+                      </span>
+                    </div>
+                    <span className={styles.metricCaption} aria-hidden="true">
+                      {caption}
+                    </span>
+                    <span className={styles.track} aria-hidden="true">
+                      <span
+                        className={`${styles.trackFill} ${hasValue ? styles.trackFillActive : ""}`}
+                      />
+                    </span>
+                  </li>
+                );
+              })
+            : footballConfig.map(({ key, label, caption, unit, Icon }) => {
+                const value = metrics[key];
+                const display = formatFootballValue(key, value, unit);
+                const hasValue = value !== null && Number.isFinite(value);
+                return (
+                  <li key={key} className={styles.metric} role="listitem">
+                    <div className={styles.metricTop}>
+                      <span className={styles.metricLabel}>{label}</span>
+                      <span className={styles.metricIcon} aria-hidden="true">
+                        <Icon className={styles.metricIconSvg} />
+                      </span>
+                    </div>
+                    <p className={styles.metricValue}>
+                      <span className="srOnly">{label}: </span>
+                      {display}
+                      {!hasValue && (
+                        <span className="srOnly">, no data yet</span>
+                      )}
+                    </p>
+                    <span className={styles.metricCaption} aria-hidden="true">
+                      {caption}
+                    </span>
+                    <span className={styles.track} aria-hidden="true">
+                      <span
+                        className={`${styles.trackFill} ${hasValue ? styles.trackFillActive : ""}`}
+                      />
+                    </span>
+                  </li>
+                );
+              })}
         </ul>
       )}
     </section>

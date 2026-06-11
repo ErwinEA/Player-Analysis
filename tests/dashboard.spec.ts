@@ -55,11 +55,15 @@ test.describe("Player Analysis dashboard", () => {
     page,
   }) => {
     await page.getByRole("radio", { name: "Badminton" }).click();
-    await expect(page.getByText("Rally wins", { exact: true })).toBeVisible();
-    await expect(page.getByText("Win rate", { exact: true })).toBeVisible();
+    await expect(page.getByText("Total rallies", { exact: true })).toBeVisible();
     await expect(
-      page.getByText("Court coverage", { exact: true }),
+      page.getByText("Avg rally duration", { exact: true }),
     ).toBeVisible();
+    await expect(page.getByText("Longest rally", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Points on serve vs return", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("In / out calls", { exact: true })).toBeVisible();
     await expect(page.getByText("Goals")).toHaveCount(0);
   });
 

@@ -80,6 +80,7 @@ detection_test/.vendor/
 .cursor/
 
 # Playwright
+badminton-analysis-complete.md
 /.playwright-mcp/
 /.playwright-browsers/
 /test-results/

@@ -160,7 +160,7 @@ class InferredBallEvent(BaseModel):
 
 class InsightsPlayerContext(BaseModel):
     name: str = ""
-    jerseyNumber: int = Field(ge=1, le=99)
+    jerseyNumber: int = Field(default=0, ge=0, le=99)
     teamName: str = ""
 
 
@@ -171,8 +171,10 @@ class InferredEventsSummary(BaseModel):
 
 
 class InsightsRequest(BaseModel):
+    sport: Literal["football", "badminton"] = "football"
     player: InsightsPlayerContext
     target: TargetMatch
+    court_side: Literal["near", "far"] | None = None
     movement: MovementStats | None = None
     event_counts: PlayerEventCounts | None = None
     inferred_events_summary: InferredEventsSummary | None = None
@@ -180,6 +182,7 @@ class InsightsRequest(BaseModel):
     heatmap_source: str | None = None
     provenance: Literal["inferred"] | None = None
     drive_contact_m: float | None = None
+    badminton_stats: BadmintonStats | None = None
     warnings: list[str] = Field(default_factory=list)
 
 

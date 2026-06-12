@@ -15,6 +15,7 @@ from backend.app.pipeline.insights import (
     trim_inferred_events,
 )
 from backend.app.schemas import (
+    BadmintonStats,
     HeatmapZoneSummary,
     InferredBallEvent,
     InferredEventsSummary,
@@ -101,6 +102,71 @@ def test_build_facts_packet_missing_events():
 def test_build_facts_packet_missing_zone():
     facts = build_facts_packet(_sample_request(zone_summary=None))
     assert "Positioning (heatmap zones): not available" in facts
+
+
+def _badminton_request(**overrides) -> InsightsRequest:
+    base = InsightsRequest(
+        sport="badminton",
+        player=InsightsPlayerContext(name="SEN", jerseyNumber=0, teamName="India"),
+        court_side="near",
+        target=TargetMatch(jersey=0, track_id=3, confidence=0.85, method="court_side"),
+        movement=MovementStats(
+            distance_m=420.0,
+            max_speed_m_s=5.2,
+            avg_speed_m_s=1.8,
+            sprint_count=2,
+            tracked_duration_s=45.0,
+            sample_count=111,
+        ),
+        badminton_stats=BadmintonStats(
+            total_rallies=9,
+            avg_rally_duration_s=4.2,
+            longest_rally_duration_s=12.5,
+            points_won_on_serve=5,
+            points_won_on_return=4,
+            total_points_won=9,
+            points_in=7,
+            points_out=2,
+        ),
+        zone_summary=HeatmapZoneSummary(
+            defensive_third_pct=30.0,
+            middle_third_pct=45.0,
+            attacking_third_pct=25.0,
+            left_pct=15.0,
+            center_pct=55.0,
+            right_pct=30.0,
+            central_pct=70.0,
+            wide_pct=30.0,
+            hottest_x_m=3.2,
+            hottest_y_m=2.1,
+        ),
+        heatmap_source="locked_target",
+        warnings=["No rallies detected in this clip — match rally metrics are unavailable."],
+    )
+    return base.model_copy(update=overrides)
+
+
+def test_build_facts_packet_badminton_includes_rally_stats():
+    facts = build_facts_packet(_badminton_request())
+    assert "Court side: near" in facts
+    assert "Total rallies: 9" in facts
+    assert "Court length thirds" in facts
+    assert "Jersey:" not in facts
+
+
+def test_build_facts_packet_badminton_missing_rally_stats():
+    facts = build_facts_packet(_badminton_request(badminton_stats=None))
+    assert "Rally / point stats: not available" in facts
+    assert "Distance: 420.0 m" in facts
+
+
+@patch("backend.app.pipeline.insights.call_ollama_chat")
+def test_generate_insights_badminton_uses_badminton_prompt(mock_chat):
+    mock_chat.return_value = "• Strong rear-court coverage.\nCaveat: rally stats inferred."
+    result = generate_insights(_badminton_request())
+    assert result.summary is not None
+    messages = mock_chat.call_args[0][0]
+    assert "badminton performance analyst" in messages[0]["content"].lower()
 
 
 def test_format_insights_text_splits_crowded_bullets():

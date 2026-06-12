@@ -345,12 +345,12 @@ export function Dashboard() {
       }
       setAnalyzeState("done");
 
-      if (sport === "football" && hasInsightsInput(response)) {
+      if (hasInsightsInput(response, sport)) {
         const insightsRunId = ++insightsRunRef.current;
         setInsightsState("loading");
         try {
           const insightsResponse = await fetchInsights(
-            buildInsightsPayload(response, details),
+            buildInsightsPayload(response, details, sport),
           );
           if (
             insightsRunId !== insightsRunRef.current ||
@@ -561,23 +561,14 @@ export function Dashboard() {
               metricsWarning={metricsWarning}
             />
           </div>
-          {sport === "football" ? (
-            <GameplayAnalysisPanel
-              analysis={gameplayAnalysis}
-              isLoading={isLoading}
-              isInsightsLoading={insightsState === "loading"}
-              errorMessage={insightsError}
-              unavailableReason={insightsUnavailableReason}
-              hasResult={hasResult}
-            />
-          ) : (
-            <GameplayAnalysisPanel
-              analysis={null}
-              isLoading={false}
-              unavailableReason="AI gameplay insights are available for football analysis only."
-              hasResult={hasResult}
-            />
-          )}
+          <GameplayAnalysisPanel
+            analysis={gameplayAnalysis}
+            isLoading={isLoading}
+            isInsightsLoading={insightsState === "loading"}
+            errorMessage={insightsError}
+            unavailableReason={insightsUnavailableReason}
+            hasResult={hasResult}
+          />
         </main>
       </div>
       <footer className={styles.footer}>

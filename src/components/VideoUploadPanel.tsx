@@ -75,7 +75,9 @@ export function VideoUploadPanel({
 
   const hasMasks = maskRows.length > 0;
   const hasShuttleSamples = Boolean(shuttleSamples && shuttleSamples.length > 0);
-  const hasOverlay = (hasMasks && showMask) || (hasShuttleSamples && showShuttle);
+  // Shuttle is baked into the annotated clip; live canvas only when scrubbing the upload.
+  const showLiveShuttle = hasShuttleSamples && showShuttle && !showingAnnotated;
+  const hasOverlay = (hasMasks && showMask) || showLiveShuttle;
   const hasTrackingRows = Boolean(trackingRows && trackingRows.length > 0);
   const samStatus = mobileSamHealth?.status;
   const maskUnavailable =
@@ -164,7 +166,7 @@ export function VideoUploadPanel({
             )
           : undefined;
       const shuttle =
-        showShuttle && hasShuttleSamples && shuttleSamples
+        showLiveShuttle && shuttleSamples
           ? shuttleAtPlaybackTime(
               video.currentTime,
               videoFps,
@@ -178,7 +180,7 @@ export function VideoUploadPanel({
         lastPaintedFrameRef.current = null;
         const parts: string[] = [];
         if (showMask && hasMasks) parts.push("no player mask");
-        if (showShuttle && hasShuttleSamples) parts.push("no shuttle");
+        if (showLiveShuttle) parts.push("no shuttle");
         maybeAnnounce(
           `Video overlay at ${video.currentTime.toFixed(1)}s (${parts.join(", ")})` +
             (playerLabel ? ` — ${playerLabel}` : ""),
@@ -224,11 +226,10 @@ export function VideoUploadPanel({
       announceMaskStatus,
       maskRows,
       showMask,
-      showShuttle,
+      showLiveShuttle,
       shuttleSamples,
       videoFps,
       hasMasks,
-      hasShuttleSamples,
       hasOverlay,
       playerLabel,
       maskFrameOffset,
@@ -275,7 +276,7 @@ export function VideoUploadPanel({
         rafRef.current = null;
       }
     };
-  }, [schedulePaint, previewUrl, hasOverlay]);
+  }, [schedulePaint, playbackUrl, hasOverlay]);
 
   useEffect(() => {
     lastPaintedFrameRef.current = null;
@@ -372,6 +373,7 @@ export function VideoUploadPanel({
           <figure className={styles.videoFigure}>
             <div className={styles.videoWrap}>
               <video
+                key={playbackUrl}
                 ref={videoRef}
                 className={styles.preview}
                 src={playbackUrl}
@@ -402,8 +404,8 @@ export function VideoUploadPanel({
           {showingAnnotated && (
             <p className={styles.maskHint} role="status">
               Track ellipses and shuttle marker are baked into this clip.
-              {hasOverlay
-                ? " Live overlay still draws on top while you scrub."
+              {hasMasks && showMask
+                ? " Player mask overlay still draws on top while you scrub."
                 : ""}
             </p>
           )}
@@ -443,7 +445,7 @@ export function VideoUploadPanel({
               Show player mask
             </label>
           )}
-          {hasShuttleSamples && (
+          {hasShuttleSamples && !showingAnnotated && (
             <label className={styles.maskToggle}>
               <input
                 type="checkbox"

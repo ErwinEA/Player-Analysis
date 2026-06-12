@@ -323,8 +323,8 @@ export function Dashboard() {
 
     try {
       const renderVideo =
-        process.env.NEXT_PUBLIC_RENDER_ANALYZE_VIDEO === "1" ||
-        process.env.NEXT_PUBLIC_RENDER_ANALYZE_VIDEO === "true";
+        process.env.NEXT_PUBLIC_RENDER_ANALYZE_VIDEO !== "0" &&
+        process.env.NEXT_PUBLIC_RENDER_ANALYZE_VIDEO !== "false";
       const payload: PlayerDetails = { ...details, sport };
       const response = await analyzeVideo(video, payload, {
         calibrationName:

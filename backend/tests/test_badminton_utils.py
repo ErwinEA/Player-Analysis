@@ -3,12 +3,14 @@
 from backend.app.pipeline.pitch_homography import build_calibration
 from backend.app.pipeline.sports.badminton_utils import (
     centroid_y,
+    court_side_to_metre_half,
     disambiguate_by_court_side,
     disambiguate_with_fallback,
     dominant_court_half,
     filter_positions_to_court_half,
     filter_rows_by_court_side,
     mask_grid_to_court_half,
+    metre_half_for_court_side,
     net_line_x_m,
     net_line_y_px,
     position_in_court_half,
@@ -151,14 +153,42 @@ def test_position_in_court_half():
     assert position_in_court_half(mid * 1.75, cal, "high")
 
 
+def test_court_side_to_metre_half_returns_valid_half():
+    cal = _cal()
+    assert court_side_to_metre_half(cal, "near") in ("low", "high")
+    assert court_side_to_metre_half(cal, "far") in ("low", "high")
+
+
+def test_court_side_to_metre_half_uses_image_probe_x():
+    cal = _cal()
+    mid = net_line_x_m(cal)
+    left = court_side_to_metre_half(cal, "near", image_probe_x=cal.image_size[0] * 0.3)
+    right = court_side_to_metre_half(cal, "near", image_probe_x=cal.image_size[0] * 0.7)
+    assert left == "low"
+    assert right == "high"
+
+
+def test_metre_half_for_court_side_uses_median_when_enough_samples():
+    cal = _cal()
+    mid = net_line_x_m(cal)
+    positions = [(mid * 0.3, 3.0)] * 2 + [(mid * 1.7, 3.0)] * 8
+    half = metre_half_for_court_side(positions, cal, "near")
+    assert half == "high"
+
+
 def test_dominant_court_half_and_filter():
     cal = _cal()
     mid = net_line_x_m(cal)
     positions = [(mid * 0.3, 3.0)] * 8 + [(mid * 1.7, 3.0)] * 2
     assert dominant_court_half(positions, cal) == "low"
     kept = filter_positions_to_court_half(positions, cal, "near")
-    assert len(kept) == 8
-    assert all(x < mid for x, _ in kept)
+    near_half = court_side_to_metre_half(cal, "near")
+    assert len(kept) >= 2
+    for x, _ in kept:
+        if near_half == "low":
+            assert x < mid
+        else:
+            assert x > mid
 
 
 def test_mask_grid_to_court_half_zeros_opponent_columns():

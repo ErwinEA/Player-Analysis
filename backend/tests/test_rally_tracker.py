@@ -115,6 +115,15 @@ def test_serving_side_alternates_each_rally():
     assert tr.events[1].serving_side == "far"
 
 
+def test_motion_latch_survives_short_gap():
+    """One missed frame should not reset serve-motion latch before rally opens."""
+    tr = _tracker(live_frames=2, start_gap_max=2, serve_speed_px=5.0)
+    tr.update(0, (100.0, 400.0))
+    tr.update(1, (100.0, 420.0))  # motion seen
+    tr.update(2, None)  # single miss
+    assert tr.update(3, (100.0, 440.0)) == "LIVE"
+
+
 def test_no_rally_without_consecutive_detections():
     tr = _tracker(live_frames=3)
     tr.update(0, (100.0, 400.0))

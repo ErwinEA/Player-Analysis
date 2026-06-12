@@ -626,8 +626,13 @@ def run_pipeline(
         suppressed_frame_count = 0
         last_known_lock_track_id: int | None = None
         badminton_rally_state = "IDLE"
+        all_rally_events: list = []
         shuttle_detector = None
         rally_tracker = None
+        shuttle_rally_kalman_gap = 0
+        shuttle_rally_kalman_max = max(
+            0, int(os.environ.get("SHUTTLE_RALLY_KALMAN_GAP", "3"))
+        )
         badminton_net_y = height / 2.0
         shuttle_stride = max(1, int(os.environ.get("SHUTTLE_STRIDE", "1")))
         shuttle_samples: list[ShuttleSample] = []
@@ -714,8 +719,10 @@ def run_pipeline(
                     from backend.app.pipeline.badminton.rally_tracker import RallyTracker
 
                     rally_tracker.finalize(frame_idx)
+                    all_rally_events.extend(rally_tracker.events)
                     rally_tracker = RallyTracker(net_y_px=badminton_net_y, fps=fps)
                     badminton_rally_state = "IDLE"
+                    shuttle_rally_kalman_gap = 0
                 if shuttle_kalman is not None:
                     shuttle_kalman.reset()
                 logger.info("Scene cut at frame %s — tracker/lock reset", frame_idx)
@@ -1265,10 +1272,22 @@ def run_pipeline(
                             locked_foot_px = foot_position_pixels(tr["bbox"])
                             break
                 if rally_tracker is not None:
-                    # Rally segmentation uses raw detections only so Kalman fill
-                    # cannot mask landing gaps between points.
+                    rally_shuttle_px = shuttle_px_frame
+                    if rally_shuttle_px is not None:
+                        shuttle_rally_kalman_gap = 0
+                    elif (
+                        not shuttle_scene_suppressed
+                        and overlay_shuttle_px is not None
+                        and shuttle_rally_kalman_gap < shuttle_rally_kalman_max
+                    ):
+                        rally_shuttle_px = overlay_shuttle_px
+                        shuttle_rally_kalman_gap += 1
+                    else:
+                        rally_shuttle_px = None
+                        if shuttle_px_frame is None:
+                            shuttle_rally_kalman_gap += 1
                     badminton_rally_state = rally_tracker.update(
-                        frame_idx, shuttle_px_frame, locked_foot_px
+                        frame_idx, rally_shuttle_px, locked_foot_px
                     )
 
             if video_writer is not None:
@@ -1576,12 +1595,11 @@ def run_pipeline(
         if details.sport == "badminton":
             if rally_tracker is not None:
                 rally_tracker.finalize(frame_idx)
+                all_rally_events.extend(rally_tracker.events)
             badminton_stats, badminton_stats_unavailable_reason = build_badminton_stats(
                 target=target,
                 has_calibration=calibration is not None,
-                rally_events=(
-                    rally_tracker.events if rally_tracker is not None else None
-                ),
+                rally_events=all_rally_events or None,
                 court_side=details.courtSide,
                 fps=fps,
                 shuttle_available=(

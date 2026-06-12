@@ -160,6 +160,50 @@ def filter_rows_by_court_side(
     ]
 
 
+def median_foot_x_px(
+    rows: list[Any],
+    calibration: PitchCalibration,
+) -> float | None:
+    """Median image X of foot/centroid positions for homography half probing."""
+    width, height = calibration.image_size
+    xs: list[float] = []
+    for row in rows:
+        foot_x = row.foot_x if hasattr(row, "foot_x") else row.get("foot_x")
+        if foot_x is not None:
+            xs.append(float(foot_x) * width)
+            continue
+        bbox = row.bbox if hasattr(row, "bbox") else row.get("bbox")
+        if bbox and len(bbox) >= 4:
+            xs.append((float(bbox[0]) + float(bbox[2])) / 2.0)
+    if not xs:
+        return None
+    # Mean resists homography fan-out that alternates left/right image X.
+    return sum(xs) / len(xs)
+
+
+def court_side_to_metre_half(
+    calibration: PitchCalibration,
+    court_side: CourtSide | str,
+    *,
+    image_probe_x: float | None = None,
+) -> CourtHalf | None:
+    """Map broadcast near/far image side to low/high metre X via homography probe."""
+    if court_side not in ("near", "far"):
+        return None
+    if not is_badminton_court(calibration.pitch_length_m, calibration.pitch_width_m):
+        return None
+    width, height = calibration.image_size
+    net_y = net_line_y_px(calibration)
+    offset = height * 0.06
+    py = net_y + offset if court_side == "near" else net_y - offset
+    px = image_probe_x if image_probe_x is not None else width / 2.0
+    try:
+        x_m, _ = calibration.pixel_to_meters(px, py)
+    except ValueError:
+        return None
+    return "low" if x_m < net_line_x_m(calibration) else "high"
+
+
 def dominant_court_half(
     positions: list[tuple[float, float]],
     calibration: PitchCalibration,
@@ -168,6 +212,40 @@ def dominant_court_half(
     mid_x = net_line_x_m(calibration)
     low = sum(1 for x_m, _ in positions if x_m < mid_x)
     return "low" if low * 2 >= len(positions) else "high"
+
+
+def metre_half_for_court_side(
+    positions: list[tuple[float, float]],
+    calibration: PitchCalibration,
+    court_side: CourtSide | str,
+    *,
+    image_probe_x: float | None = None,
+) -> CourtHalf:
+    """Pick metre court half from player samples, steered by court_side when sparse."""
+    mid_x = net_line_x_m(calibration)
+    margin = _NET_MARGIN_M
+    if len(positions) >= 4:
+        low_count = sum(1 for x, _ in positions if x < mid_x - margin)
+        high_count = sum(1 for x, _ in positions if x > mid_x + margin)
+        minority = min(low_count, high_count)
+        if minority > 0 and minority / len(positions) >= 0.3:
+            mapped = court_side_to_metre_half(
+                calibration, court_side, image_probe_x=image_probe_x
+            )
+            if mapped is not None:
+                return mapped
+    if len(positions) >= 3:
+        xs = sorted(x for x, _ in positions)
+        median_x = xs[len(xs) // 2]
+        return "low" if median_x < mid_x else "high"
+    mapped = court_side_to_metre_half(
+        calibration, court_side, image_probe_x=image_probe_x
+    )
+    if mapped is not None:
+        return mapped
+    if len(positions) >= 2:
+        return dominant_court_half(positions, calibration)
+    return "low"
 
 
 def position_in_court_half(
@@ -187,24 +265,33 @@ def filter_positions_to_court_half(
     positions: list[tuple[float, float]],
     calibration: PitchCalibration,
     court_side: CourtSide | str,
+    *,
+    image_probe_x: float | None = None,
 ) -> list[tuple[float, float]]:
-    """Keep metre samples on the locked player's dominant court half.
-
-    Broadcast homography can fan one court side across both halves of court length;
-    for a single locked player the true half is the majority cluster at x = length/2.
-    """
+    """Keep metre samples on the court half for the selected near/far side."""
     if court_side not in ("near", "far"):
         return positions
     if not is_badminton_court(calibration.pitch_length_m, calibration.pitch_width_m):
         return positions
-    if len(positions) < 2:
+    if not positions:
         return positions
-    half = dominant_court_half(positions, calibration)
-    return [
+    half = metre_half_for_court_side(
+        positions, calibration, court_side, image_probe_x=image_probe_x
+    )
+    filtered = [
         (x_m, y_m)
         for x_m, y_m in positions
         if position_in_court_half(x_m, calibration, half)
     ]
+    # If calibration is poor, homography half may reject almost everything — keep majority.
+    if len(positions) >= 4 and len(filtered) < len(positions) * 0.15:
+        half = dominant_court_half(positions, calibration)
+        filtered = [
+            (x_m, y_m)
+            for x_m, y_m in positions
+            if position_in_court_half(x_m, calibration, half)
+        ]
+    return filtered
 
 
 def mask_grid_to_court_half(

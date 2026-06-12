@@ -57,20 +57,21 @@ class RallyTracker:
     Inverted or rotated feeds need a future calibration flag to flip sides.
 
   Tunables (environment variables):
-    SHUTTLE_LIVE_FRAMES — consecutive detections to start a rally (default 2)
+    SHUTTLE_LIVE_FRAMES — consecutive detections to start a rally (default 1)
     SHUTTLE_GAP_FRAMES — miss streak after flight to end rally (default 8)
+    SHUTTLE_START_GAP_MAX — miss frames before serve-motion latch resets (default 2)
     SHUTTLE_FLIGHT_VY_PX — min |vertical px/frame| for in-flight (default 4)
     SHUTTLE_MIN_FLIGHT_FRAMES — flight frames before landing can end (default 2)
     SHUTTLE_LAND_VY_PX — max |vy| when shuttle has landed (default 2.5)
     SHUTTLE_LAND_STABLE_FRAMES — low-velocity frames to confirm landing (default 3)
-    SHUTTLE_SERVE_SPEED_PX — min px/frame motion to count as serve/hit (default 3)
+    SHUTTLE_SERVE_SPEED_PX — min px/frame motion to count as serve/hit (default 1.5)
     SHUTTLE_POST_LAND_COOLDOWN_FRAMES — idle frames after rally end (default 6)
     SHUTTLE_TOUCH_RADIUS_PX, SHUTTLE_TOUCH_RECENT_FRAMES — locked-player touch
     """
 
     net_y_px: float
     fps: float = 30.0
-    live_frames: int = field(default_factory=lambda: _env_int("SHUTTLE_LIVE_FRAMES", 2))
+    live_frames: int = field(default_factory=lambda: _env_int("SHUTTLE_LIVE_FRAMES", 1))
     gap_frames: int = field(default_factory=lambda: _env_int("SHUTTLE_GAP_FRAMES", 8))
     flight_vy_px: float = field(
         default_factory=lambda: _env_float("SHUTTLE_FLIGHT_VY_PX", 4.0)
@@ -85,7 +86,10 @@ class RallyTracker:
         default_factory=lambda: _env_int("SHUTTLE_LAND_STABLE_FRAMES", 3)
     )
     serve_speed_px: float = field(
-        default_factory=lambda: _env_float("SHUTTLE_SERVE_SPEED_PX", 3.0)
+        default_factory=lambda: _env_float("SHUTTLE_SERVE_SPEED_PX", 1.5)
+    )
+    start_gap_max: int = field(
+        default_factory=lambda: _env_int("SHUTTLE_START_GAP_MAX", 2)
     )
     post_land_cooldown_frames: int = field(
         default_factory=lambda: _env_int("SHUTTLE_POST_LAND_COOLDOWN_FRAMES", 6)
@@ -152,7 +156,8 @@ class RallyTracker:
         else:
             self._seen_streak = 0
             self._gap_streak += 1
-            self._idle_motion_seen = False
+            if self._gap_streak > self.start_gap_max:
+                self._idle_motion_seen = False
             self._prev_shuttle_x = None
             self._prev_shuttle_y = None
 

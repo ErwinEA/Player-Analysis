@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
 
+logger = logging.getLogger(__name__)
+
 _READ_CHUNK = 1024 * 1024
+_LOG_EVERY_BYTES = 25 * 1024 * 1024
 
 
 def max_upload_bytes() -> int:
@@ -44,6 +48,7 @@ async def stream_upload_capped(
     """Stream upload to disk; returns bytes written."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     total = 0
+    next_log_at = _LOG_EVERY_BYTES
     try:
         with dest.open("wb") as out:
             while True:
@@ -59,6 +64,12 @@ async def stream_upload_capped(
                         ),
                     )
                 out.write(chunk)
+                if total >= next_log_at:
+                    logger.info(
+                        "Analyze upload in progress: %s MB received…",
+                        round(total / (1024 * 1024), 1),
+                    )
+                    next_log_at += _LOG_EVERY_BYTES
     except HTTPException:
         dest.unlink(missing_ok=True)
         raise

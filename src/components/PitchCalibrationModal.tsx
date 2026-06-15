@@ -23,6 +23,8 @@ import {
   MAX_BOUNDARY_POINTS,
   MIN_BOUNDARY_POINTS,
 } from "@/lib/pitchCalibration";
+import { courtDimensionsForSport } from "@/lib/courtConfig";
+import type { Sport } from "@/types/sport";
 import styles from "./PitchCalibrationModal.module.css";
 
 const RETICLE_STEP = 8;
@@ -30,6 +32,7 @@ const RETICLE_STEP_FAST = 24;
 
 type PitchCalibrationModalProps = {
   open: boolean;
+  sport?: Sport;
   calibrationName?: string;
   frameIndex?: number;
   /** Uploaded video: pick frame from this file and save calibration with the video. */
@@ -50,12 +53,15 @@ function getFocusableElements(root: HTMLElement): HTMLElement[] {
 
 export function PitchCalibrationModal({
   open,
+  sport = "football",
   calibrationName = "testmatch2",
   frameIndex = 100,
   videoFile,
   onClose,
   onSaved,
 }: PitchCalibrationModalProps) {
+  const surface = sport === "badminton" ? "court" : "pitch";
+  const surfaceTitle = surface === "court" ? "Court" : "Pitch";
   const uploadMode = Boolean(videoFile);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -296,18 +302,18 @@ export function PitchCalibrationModal({
       const conf = previewData
         ? `Confidence ${Math.round(previewData.confidence * 100)} percent.`
         : "";
-      return `Pitch calibration preview. ${conf}${placed ? ` Points: ${placed}.` : ""}`;
+      return `${surfaceTitle} calibration preview. ${conf}${placed ? ` Points: ${placed}.` : ""}`;
     }
     if (points.length >= MAX_BOUNDARY_POINTS) {
-      return `Pitch frame. Maximum ${MAX_BOUNDARY_POINTS} points placed.${placed ? ` ${placed}.` : ""}`;
+      return `${surfaceTitle} frame. Maximum ${MAX_BOUNDARY_POINTS} points placed.${placed ? ` ${placed}.` : ""}`;
     }
     const crosshair = `Crosshair at ${Math.round(reticle.x)}, ${Math.round(reticle.y)}`;
     const next = boundaryPointLabel(points.length);
     return (
-      `Pitch boundary placement. Arrow keys move crosshair; Enter or Space places a point; Backspace removes the last. ` +
+      `${surfaceTitle} boundary placement. Arrow keys move crosshair; Enter or Space places a point; Backspace removes the last. ` +
       `${crosshair}. ${points.length} points placed (minimum ${MIN_BOUNDARY_POINTS}, maximum ${MAX_BOUNDARY_POINTS}); next: ${next}.${placed ? ` Placed: ${placed}.` : ""}`
     );
-  }, [points, reticle, step, previewData]);
+  }, [points, reticle, step, previewData, surfaceTitle]);
 
   useEffect(() => {
     if (!open) return;
@@ -445,6 +451,22 @@ export function PitchCalibrationModal({
     [points],
   );
 
+  const courtDims = useMemo(
+    () => courtDimensionsForSport(sport),
+    [sport],
+  );
+
+  const calibrationCourtFields = useMemo(
+    () =>
+      sport === "badminton"
+        ? {
+            pitch_length_m: courtDims.pitch_length_m,
+            pitch_width_m: courtDims.pitch_width_m,
+          }
+        : {},
+    [sport, courtDims],
+  );
+
   const handlePreview = async () => {
     if (points.length < MIN_BOUNDARY_POINTS) return;
     setPreviewing(true);
@@ -454,6 +476,7 @@ export function PitchCalibrationModal({
         name: calibrationName,
         frame_index: activeFrameIndex,
         image_boundary_points: boundaryPayload,
+        ...calibrationCourtFields,
       };
       if (uploadMode && frameData) {
         previewPayload.image_width = frameData.width;
@@ -464,7 +487,7 @@ export function PitchCalibrationModal({
       setStep("preview");
       const confPct = Math.round(result.confidence * 100);
       setReticleAnnouncement(
-        `Preview ready. Confidence ${confPct} percent. Probes ${result.probe_count} of ${result.probe_total} on pitch.`,
+        `Preview ready. Confidence ${confPct} percent. Probes ${result.probe_count} of ${result.probe_total} on ${surface}.`,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Preview failed");
@@ -484,12 +507,14 @@ export function PitchCalibrationModal({
           name: calibrationName,
           frame_index: activeFrameIndex,
           image_boundary_points: boundaryPayload,
+          ...calibrationCourtFields,
         });
       } else {
         await savePitchCalibration({
           name: calibrationName,
           frame_index: activeFrameIndex,
           image_boundary_points: boundaryPayload,
+          ...calibrationCourtFields,
         });
       }
       onSaved(calibrationName);
@@ -533,7 +558,7 @@ export function PitchCalibrationModal({
         onClick={(e) => e.stopPropagation()}
       >
         <header className={styles.header}>
-          <h2 id="pitch-calibration-title">Pitch calibration</h2>
+          <h2 id="pitch-calibration-title">{surfaceTitle} calibration</h2>
           <button
             ref={closeBtnRef}
             type="button"
@@ -545,13 +570,16 @@ export function PitchCalibrationModal({
         </header>
         <p id="pitch-calibration-hint" className={styles.hint}>
           Place {MIN_BOUNDARY_POINTS}–{MAX_BOUNDARY_POINTS} points clockwise
-          around the visible pitch outline (yellow). A green quadrilateral is
+          around the visible {surface} outline (yellow). A green quadrilateral is
           derived once you have at least {MIN_BOUNDARY_POINTS} points. Use arrow
           keys to move the crosshair, then Enter or Space to place each point.
           Backspace removes the last point.
           {uploadMode
-            ? " Choose a wide, unobstructed view of the pitch before marking points."
+            ? ` Choose a wide, unobstructed view of the ${surface} before marking points.`
             : ` Frame ${activeFrameIndex} from the server default video.`}
+          {sport === "badminton"
+            ? " Save calibration while Badminton mode is selected so metre stats use the singles court (13.4 m × 6.1 m)."
+            : ""}
         </p>
         {uploadMode && videoDuration > 0 && (
           <div className={styles.framePicker}>
@@ -595,7 +623,7 @@ export function PitchCalibrationModal({
               <strong>{Math.round(previewData.confidence * 100)}%</strong>
             </p>
             <p className={styles.previewMetric}>
-              Frame probes on pitch:{" "}
+              Frame probes on {surface}:{" "}
               <strong>
                 {previewData.probe_count}/{previewData.probe_total}
               </strong>
@@ -666,6 +694,7 @@ export function PitchCalibrationModal({
               className={styles.primary}
               onClick={() => void handlePreview()}
               disabled={!canPreview}
+              aria-describedby="pitch-calibration-progress pitch-calibration-hint"
             >
               {previewing ? "Validating…" : "Validate & preview"}
             </button>

@@ -16,6 +16,15 @@ def _color_min_floor() -> float:
     return float(os.environ.get("COLOR_MATCH_MIN", "0.05"))
 
 
+def color_lock_min_avg() -> float:
+    """Minimum mean shirt-color score to accept a color lock."""
+    return max(_color_lock_threshold(), _color_min_floor())
+
+
+def color_lock_min_samples() -> int:
+    return 5
+
+
 def _name_min_ratio() -> float:
     return float(os.environ.get("NAME_MIN_RATIO", "0.6"))
 
@@ -139,6 +148,30 @@ class TrackIdentityMatcher:
     @property
     def is_locked(self) -> bool:
         return self.lock is not None
+
+    def apply_court_side_lock(
+        self, track_id: int, confidence: float = 1.0
+    ) -> TargetLock:
+        """Lock target by court-side disambiguation (badminton)."""
+        lock = TargetLock(
+            track_id=track_id,
+            jersey=self.target_jersey,
+            method="court_side",
+            confidence=round(confidence, 3),
+        )
+        self.lock = lock
+        return lock
+
+    def apply_color_lock(self, track_id: int, confidence: float = 0.0) -> TargetLock:
+        """Lock target by shirt-color fallback (badminton)."""
+        lock = TargetLock(
+            track_id=track_id,
+            jersey=self.target_jersey,
+            method="color",
+            confidence=round(confidence, 3),
+        )
+        self.lock = lock
+        return lock
 
     def release_lock(self) -> None:
         """Drop the current lock so the target can be re-acquired on a new shot.

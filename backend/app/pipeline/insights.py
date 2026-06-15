@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from backend.app.schemas import (
+    BadmintonStats,
     HeatmapZoneSummary,
     InferredBallEvent,
     InsightsRequest,
@@ -83,13 +84,19 @@ def _format_movement(movement: MovementStats | None) -> list[str]:
     ]
 
 
-def _format_zone_summary(zone: HeatmapZoneSummary | None) -> list[str]:
+def _format_zone_summary(
+    zone: HeatmapZoneSummary | None,
+    *,
+    sport: str = "football",
+) -> list[str]:
     if zone is None:
         return ["Positioning (heatmap zones): not available"]
+    length_label = "Court length" if sport == "badminton" else "Pitch"
+    coord_label = "court coords" if sport == "badminton" else "pitch coords"
     lines = [
         "Positioning (heatmap zones):",
         (
-            f"- Pitch thirds: defensive {zone.defensive_third_pct}%, "
+            f"- {length_label} thirds: defensive {zone.defensive_third_pct}%, "
             f"middle {zone.middle_third_pct}%, attacking {zone.attacking_third_pct}%"
         ),
         (
@@ -100,22 +107,59 @@ def _format_zone_summary(zone: HeatmapZoneSummary | None) -> list[str]:
     ]
     if zone.hottest_x_m is not None and zone.hottest_y_m is not None:
         lines.append(
-            f"- Hottest zone: {zone.hottest_x_m}m x {zone.hottest_y_m}m (pitch coords)"
+            f"- Hottest zone: {zone.hottest_x_m}m x {zone.hottest_y_m}m ({coord_label})"
         )
+    return lines
+
+
+def _format_badminton_stats(stats: BadmintonStats | None) -> list[str]:
+    if stats is None or stats.total_rallies is None:
+        return ["Rally / point stats: not available"]
+    lines = [
+        "Rally / point stats:",
+        f"- Total rallies: {stats.total_rallies}",
+    ]
+    if stats.avg_rally_duration_s is not None:
+        lines.append(f"- Avg rally duration: {stats.avg_rally_duration_s:.1f} s")
+    if stats.longest_rally_duration_s is not None:
+        lines.append(f"- Longest rally: {stats.longest_rally_duration_s:.1f} s")
+    if stats.total_points_won is not None:
+        serve = stats.points_won_on_serve
+        ret = stats.points_won_on_return
+        serve_s = str(serve) if serve is not None else "?"
+        ret_s = str(ret) if ret is not None else "?"
+        lines.append(
+            f"- Points won on serve vs return: {serve_s}/{stats.total_points_won} serve, "
+            f"{ret_s}/{stats.total_points_won} return"
+        )
+    if stats.points_in is not None or stats.points_out is not None:
+        pin = stats.points_in if stats.points_in is not None else "?"
+        pout = stats.points_out if stats.points_out is not None else "?"
+        lines.append(f"- In / out calls: {pin} in, {pout} out")
     return lines
 
 
 def build_facts_packet(req: InsightsRequest) -> str:
     """Compact facts block for the LLM (~300-600 tokens)."""
     lines: list[str] = []
+    sport = req.sport
 
     player = req.player
-    name = player.name.strip() or f"#{player.jerseyNumber}"
-    team = player.teamName.strip() or "unknown team"
-    lines.append("Player:")
-    lines.append(f"- Name: {name}")
-    lines.append(f"- Jersey: {player.jerseyNumber}")
-    lines.append(f"- Team: {team}")
+    if sport == "badminton":
+        name = player.name.strip() or "unnamed player"
+        team = player.teamName.strip() or "unknown club/country"
+        lines.append("Player:")
+        lines.append(f"- Name: {name}")
+        lines.append(f"- Club/country: {team}")
+        if req.court_side:
+            lines.append(f"- Court side: {req.court_side}")
+    else:
+        name = player.name.strip() or f"#{player.jerseyNumber}"
+        team = player.teamName.strip() or "unknown team"
+        lines.append("Player:")
+        lines.append(f"- Name: {name}")
+        lines.append(f"- Jersey: {player.jerseyNumber}")
+        lines.append(f"- Team: {team}")
 
     target = req.target
     lines.append("Player lock:")
@@ -127,7 +171,9 @@ def build_facts_packet(req: InsightsRequest) -> str:
 
     lines.extend(_format_movement(req.movement))
 
-    if req.event_counts is None or req.provenance != "inferred":
+    if sport == "badminton":
+        lines.extend(_format_badminton_stats(req.badminton_stats))
+    elif req.event_counts is None or req.provenance != "inferred":
         lines.append("Events: not available")
     else:
         ec = req.event_counts
@@ -151,7 +197,7 @@ def build_facts_packet(req: InsightsRequest) -> str:
                 omitted = summary.total_count - len(summary.events)
                 lines.append(f"  - ... {omitted} more events omitted")
 
-    lines.extend(_format_zone_summary(req.zone_summary))
+    lines.extend(_format_zone_summary(req.zone_summary, sport=sport))
 
     if req.warnings:
         lines.append("Warnings:")
@@ -176,24 +222,37 @@ def format_insights_text(raw: str) -> str:
     return "\n\n".join(blocks)
 
 
-def build_prompt(facts: str) -> list[dict[str, str]]:
+def build_prompt(facts: str, *, sport: str = "football") -> list[dict[str, str]]:
+    if sport == "badminton":
+        system = (
+            "You are a badminton performance analyst. Use ONLY the facts provided. "
+            "Do not invent statistics, rallies, or points. If rally stats are missing "
+            "or warnings note uncertainty, state that clearly in a caveat. "
+            "Court is 13.4 m long × 6.1 m wide. Length thirds split the long axis "
+            "(0 m and 13.4 m are baselines; net is near 6.7 m) — not necessarily "
+            "the player's attacking direction."
+        )
+        bullets = (
+            "positioning/court coverage, movement workload, rally/point patterns "
+            "(only if rally stats are present)"
+        )
+    else:
+        system = (
+            "You are a football performance analyst. Use ONLY the facts provided. "
+            "Do not invent statistics or events. If data is missing or warnings "
+            "note uncertainty, state that clearly in a caveat. "
+            "Pitch thirds are geometric (0m = one goal line, 105m = other) — "
+            "not necessarily the team's attacking direction."
+        )
+        bullets = "positioning, involvement, movement"
     return [
-        {
-            "role": "system",
-            "content": (
-                "You are a football performance analyst. Use ONLY the facts provided. "
-                "Do not invent statistics or events. If data is missing or warnings "
-                "note uncertainty, state that clearly in a caveat. "
-                "Pitch thirds are geometric (0m = one goal line, 105m = other) — "
-                "not necessarily the team's attacking direction."
-            ),
-        },
+        {"role": "system", "content": system},
         {
             "role": "user",
             "content": (
                 f"{facts}\n\n"
                 "Write a brief gameplay analysis with strict formatting:\n"
-                "- 3 to 4 bullet points (positioning, involvement, movement)\n"
+                f"- 3 to 4 bullet points ({bullets})\n"
                 "- 1 final line starting with 'Caveat:'\n"
                 "- Each bullet on its own line, starting with '• '\n"
                 "- Blank line between each bullet\n"
@@ -277,7 +336,7 @@ def ollama_health() -> dict[str, object]:
 def generate_insights(req: InsightsRequest) -> InsightsResponse:
     facts = build_facts_packet(req)
     try:
-        messages = build_prompt(facts)
+        messages = build_prompt(facts, sport=req.sport)
         summary = call_ollama_chat(messages).strip()
     except InsightsUnavailableError as exc:
         logger.warning("Insights unavailable: %s", exc)

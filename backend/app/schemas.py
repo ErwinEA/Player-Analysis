@@ -10,8 +10,10 @@ from backend.app.pipeline.mask_rle import MaskRle
 class PlayerDetails(BaseModel):
     """Mirrors PlayerDetails from src/components/Sidebar.tsx."""
 
+    sport: Literal["football", "badminton"] = "football"
     name: str = ""
-    jerseyNumber: int = Field(ge=1, le=99)
+    jerseyNumber: int = Field(default=0, ge=0, le=99)
+    courtSide: Literal["near", "far", ""] = ""
     primaryJerseyColor: str = ""
     secondaryJerseyColor: str = ""
     teamName: str = ""
@@ -24,6 +26,17 @@ class PlayerDetails(BaseModel):
         if not v.startswith("#") or len(v) not in (4, 7):
             raise ValueError("Jersey color must be a hex string like #ffffff")
         return v
+
+    @model_validator(mode="after")
+    def validate_sport_requirements(self) -> PlayerDetails:
+        if self.sport == "football" and self.jerseyNumber < 1:
+            raise ValueError("jerseyNumber must be between 1 and 99 for football")
+        if self.sport == "badminton":
+            if not self.courtSide:
+                raise ValueError("courtSide is required for badminton (near or far)")
+            if not self.primaryJerseyColor.strip():
+                raise ValueError("primaryJerseyColor is required for badminton")
+        return self
 
 
 def jersey_colors_configured(details: PlayerDetails) -> bool:
@@ -117,6 +130,26 @@ class PlayerEventCounts(BaseModel):
     Drive: int = 0
 
 
+class ShuttleSample(BaseModel):
+    """Shuttlecock position in a video frame (pixel coordinates)."""
+
+    frame: int
+    cx: float
+    cy: float
+    conf: float | None = None
+
+
+class BadmintonStats(BaseModel):
+    total_rallies: int | None = None
+    avg_rally_duration_s: float | None = None
+    longest_rally_duration_s: float | None = None
+    points_won_on_serve: int | None = None
+    points_won_on_return: int | None = None
+    total_points_won: int | None = None
+    points_in: int | None = None
+    points_out: int | None = None
+
+
 class InferredBallEvent(BaseModel):
     frame: int
     kind: str
@@ -127,7 +160,7 @@ class InferredBallEvent(BaseModel):
 
 class InsightsPlayerContext(BaseModel):
     name: str = ""
-    jerseyNumber: int = Field(ge=1, le=99)
+    jerseyNumber: int = Field(default=0, ge=0, le=99)
     teamName: str = ""
 
 
@@ -138,8 +171,10 @@ class InferredEventsSummary(BaseModel):
 
 
 class InsightsRequest(BaseModel):
+    sport: Literal["football", "badminton"] = "football"
     player: InsightsPlayerContext
     target: TargetMatch
+    court_side: Literal["near", "far"] | None = None
     movement: MovementStats | None = None
     event_counts: PlayerEventCounts | None = None
     inferred_events_summary: InferredEventsSummary | None = None
@@ -147,6 +182,7 @@ class InsightsRequest(BaseModel):
     heatmap_source: str | None = None
     provenance: Literal["inferred"] | None = None
     drive_contact_m: float | None = None
+    badminton_stats: BadmintonStats | None = None
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -163,7 +199,7 @@ class AnalyzeResponse(BaseModel):
     heatmap: HeatmapResult | None = None
     calibration_name: str | None = None
     heatmap_source: str | None = None  # locked_target | fallback_track
-    calibration_skipped_reason: str | None = None  # size_mismatch | positions_out_of_bounds
+    calibration_skipped_reason: str | None = None  # size_mismatch | positions_out_of_bounds | court_dimension_mismatch
     masks_available: bool | None = None
     masks_unavailable_reason: str | None = None
     mask_row_count: int | None = None
@@ -173,6 +209,9 @@ class AnalyzeResponse(BaseModel):
     ball_samples: int | None = None
     events_unavailable_reason: str | None = None
     drive_contact_m: float | None = None
+    badminton_stats: BadmintonStats | None = None
+    badminton_stats_unavailable_reason: str | None = None
+    shuttle_samples: list[ShuttleSample] = Field(default_factory=list)
     video_url: str | None = None
     video_unavailable_reason: str | None = None
 
@@ -195,6 +234,8 @@ class PitchCalibrationSaveRequest(BaseModel):
     image_corners: list[list[float]] | None = None
     image_boundary_points: list[list[float]] | None = None
     point_labels: list[str] | None = None
+    pitch_length_m: float | None = Field(default=None, gt=0)
+    pitch_width_m: float | None = Field(default=None, gt=0)
     """Frame size for preview when the calibration video is not on the server yet."""
     image_width: int | None = Field(default=None, ge=1)
     image_height: int | None = Field(default=None, ge=1)
@@ -204,6 +245,15 @@ class PitchCalibrationSaveRequest(BaseModel):
         w, h = self.image_width, self.image_height
         if (w is None) != (h is None):
             raise ValueError("image_width and image_height must both be set or both omitted.")
+        return self
+
+    @model_validator(mode="after")
+    def court_dims_pair(self) -> PitchCalibrationSaveRequest:
+        length_m, width_m = self.pitch_length_m, self.pitch_width_m
+        if (length_m is None) != (width_m is None):
+            raise ValueError(
+                "pitch_length_m and pitch_width_m must both be set or both omitted."
+            )
         return self
 
     @model_validator(mode="after")

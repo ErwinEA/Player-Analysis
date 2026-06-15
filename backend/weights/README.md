@@ -12,6 +12,7 @@ Use on a **new machine** after `pip install -r backend/requirements.txt`. Checkp
 | 2 | `jersey_number_b0.pt` | `detection_test/weights/` | [Jersey classifier](#jersey-number-classifier-efficientnet-b0) |
 | 3 | `osnet_x1_0_soccernet.pth` | `detection_test/weights/` | [OSNet ReID](#osnet-reid-legacy--detection-pipeline) |
 | 4 | `yolov8n_ball.pt` | `detection_test/weights/` then `backend/weights/` | [Ball YOLO](#ball-detector-yolov8) |
+| 5 | `yolov8m_shuttlecock.pt` | `backend/weights/` | [Shuttle YOLO](#shuttle-detector-yolov8-badminton) — badminton rally stats only |
 
 Person detector **`yolov8n.pt`**: Ultralytics auto-download on first analyze (`YOLO_WEIGHTS`).
 
@@ -23,12 +24,13 @@ check backend/weights/mobile_sam.pt
 check detection_test/weights/jersey_number_b0.pt
 check detection_test/weights/osnet_x1_0_soccernet.pth
 check detection_test/weights/yolov8n_ball.pt || check backend/weights/yolov8n_ball.pt
+check backend/weights/yolov8m_shuttlecock.pt
 ```
 
 **Optional API check** (start backend first, e.g. `./scripts/dev_backend.sh` from repo root):
 
 ```bash
-curl -s http://localhost:8000/health | python3 -m json.tool   # mobile_sam.status → ok
+curl -s http://localhost:8000/health | python3 -m json.tool   # mobile_sam.status → ok; shuttle.status → ok (badminton)
 ```
 
 | Missing | Effect |
@@ -37,6 +39,7 @@ curl -s http://localhost:8000/health | python3 -m json.tool   # mobile_sam.statu
 | `jersey_number_b0.pt` | EasyOCR jersey digits only |
 | `osnet_x1_0_soccernet.pth` | Generic ImageNet OSNet |
 | `yolov8n_ball.pt` | Ball event stats disabled |
+| `yolov8m_shuttlecock.pt` | Badminton rally stats disabled (`badminton_stats_unavailable_reason: no_shuttle_weights`) |
 
 Sandbox YOLO/ReID: [detection_test/WEIGHTS.md](../../detection_test/WEIGHTS.md).
 
@@ -61,6 +64,37 @@ export BALL_WEIGHTS=/absolute/path/to/yolov8n_ball.pt
 ```
 
 The weights file is **not** committed to git. Place it manually on each machine. If missing, ball events are disabled (`events_unavailable_reason: no_ball_weights`) and the rest of the analyze pipeline still runs.
+
+---
+
+## Shuttle detector (YOLOv8, badminton)
+
+| File | Purpose |
+|------|---------|
+| **`yolov8m_shuttlecock.pt`** | Shuttlecock detection for badminton rally stats (rally wins, win rate, duration, winners) |
+
+**Path:**
+
+```
+backend/weights/yolov8m_shuttlecock.pt
+```
+
+Or:
+
+```bash
+export SHUTTLE_WEIGHTS=/absolute/path/to/yolov8m_shuttlecock.pt
+```
+
+Not committed to git. If missing, rally stats are disabled (`badminton_stats_unavailable_reason: no_shuttle_weights`) and badminton movement stats / heatmap still run.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SHUTTLE_CONF` | `0.25` | Detection confidence threshold |
+| `SHUTTLE_IOU` | `0.5` | NMS IoU |
+| `SHUTTLE_LIVE_FRAMES` | `2` | Consecutive shuttle detections to start a rally (IDLE → LIVE) |
+| `SHUTTLE_GAP_FRAMES` | `15` | Frames without a shuttle to end a rally (LIVE → END) |
+| `SHUTTLE_TOUCH_RADIUS_PX` | `120` | Shuttle-to-locked-foot distance counting as a touch |
+| `SHUTTLE_TOUCH_RECENT_FRAMES` | `30` | Touch recency window for the winners metric |
 
 | Variable | Default | Description |
 |----------|---------|-------------|

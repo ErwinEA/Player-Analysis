@@ -1,6 +1,8 @@
 import type { PlayerDetails } from "@/components/Sidebar";
 import type { AnalyzeResponse } from "@/types/analysis";
 import type { InsightsRequest } from "@/types/insights";
+import type { Sport } from "@/types/sport";
+import { badmintonMetricsWarning } from "@/lib/badmintonMetrics";
 
 function isConfidentPlayerLock(result: AnalyzeResponse): boolean {
   const method = result.target.method;
@@ -28,7 +30,7 @@ function eventsWarning(result: AnalyzeResponse): string | null {
   return null;
 }
 
-function collectWarnings(result: AnalyzeResponse): string[] {
+function collectFootballWarnings(result: AnalyzeResponse): string[] {
   const warnings: string[] = [];
   const eventWarn = eventsWarning(result);
   if (eventWarn) warnings.push(eventWarn);
@@ -61,10 +63,24 @@ function collectWarnings(result: AnalyzeResponse): string[] {
   return warnings;
 }
 
-export function hasInsightsInput(result: AnalyzeResponse): boolean {
+function collectBadmintonWarnings(result: AnalyzeResponse): string[] {
+  const warnings: string[] = [];
+  const metricWarn = badmintonMetricsWarning(result);
+  if (metricWarn) warnings.push(metricWarn);
+  return warnings;
+}
+
+export function hasInsightsInput(
+  result: AnalyzeResponse,
+  sport: Sport,
+): boolean {
   const hasMovement =
     result.movement != null && result.movement.units === "meters";
   const hasZone = result.heatmap?.zone_summary != null;
+  if (sport === "badminton") {
+    const hasRallyStats = result.badminton_stats?.total_rallies != null;
+    return hasMovement || hasZone || hasRallyStats;
+  }
   const hasEvents =
     result.event_counts != null && result.provenance === "inferred";
   return hasMovement || hasZone || hasEvents;
@@ -73,21 +89,27 @@ export function hasInsightsInput(result: AnalyzeResponse): boolean {
 export function buildInsightsPayload(
   result: AnalyzeResponse,
   details: PlayerDetails,
+  sport: Sport,
 ): InsightsRequest {
   const inferred = result.inferred_events ?? [];
   const weakCount = inferred.filter((e) => e.lock_confidence === "weak").length;
 
   return {
+    sport,
+    court_side:
+      sport === "badminton" && details.courtSide
+        ? details.courtSide
+        : null,
     player: {
       name: details.name,
-      jerseyNumber: details.jerseyNumber,
+      jerseyNumber: sport === "football" ? details.jerseyNumber : 0,
       teamName: details.teamName,
     },
     target: result.target,
     movement: result.movement ?? null,
-    event_counts: result.event_counts ?? null,
+    event_counts: sport === "football" ? (result.event_counts ?? null) : null,
     inferred_events_summary:
-      inferred.length > 0
+      sport === "football" && inferred.length > 0
         ? {
             weak_count: weakCount,
             total_count: inferred.length,
@@ -96,8 +118,14 @@ export function buildInsightsPayload(
         : null,
     zone_summary: result.heatmap?.zone_summary ?? null,
     heatmap_source: result.heatmap_source ?? null,
-    provenance: result.provenance ?? null,
-    drive_contact_m: result.drive_contact_m ?? null,
-    warnings: collectWarnings(result),
+    provenance: sport === "football" ? (result.provenance ?? null) : null,
+    drive_contact_m:
+      sport === "football" ? (result.drive_contact_m ?? null) : null,
+    badminton_stats:
+      sport === "badminton" ? (result.badminton_stats ?? null) : null,
+    warnings:
+      sport === "badminton"
+        ? collectBadmintonWarnings(result)
+        : collectFootballWarnings(result),
   };
 }

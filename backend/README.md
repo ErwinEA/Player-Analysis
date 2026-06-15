@@ -37,7 +37,7 @@ On first run, Ultralytics downloads `yolov8n.pt` automatically (unless you set `
 | `TRACK_LOW_THRESH` | `0.1` | ByteTrack second-stage threshold; warn if `DET_CONF` is higher |
 | `TRACK_MIN_AGE` | `3` | Frames before a track is analyzed for OCR / included in output |
 | `OCR_EVERY` | `5` | Run OCR every N frames (OCR is slow) |
-| `MAX_FRAMES` | `5000` | Cap frames through detection/tracking (max 5000; invalid/`0` → 5000) |
+| `MAX_FRAMES` | `6000` | Cap frames through detection/tracking (max 6000; invalid/`0` → 6000) |
 | `MAX_UPLOAD_MB` | `4096` | Max legacy video upload size in megabytes (4 GB) |
 | `CORS_ALLOW_LOCAL_REGEX` | `1` | Allow localhost/127.0.0.1 on any port (set `0` in production) |
 | `OCR_GPU` | `0` | Set to `1` to run EasyOCR on a CUDA GPU |
@@ -66,6 +66,7 @@ On first run, Ultralytics downloads `yolov8n.pt` automatically (unless you set `
 | `SAM_DEVICE` | `auto` | `mps`, `cuda`, `cpu`, or `auto` (no CPU fallback unless `SAM_ALLOW_CPU_FALLBACK=1`) |
 | `SAM_ALLOW_CPU_FALLBACK` | unset | Set `1` to retry MobileSAM on CPU after MPS/CUDA failure |
 | `SAM_WARMUP_FRAMES` | `3` | Frames on locked track after identity lock before SAM |
+| `SAM_STRIDE` | `1` | Run MobileSAM every N visible frames after warmup (`3` ≈ 3× less SAM work) |
 | `REID_FALLBACK_THRESH` | `0.65` | ReID match when ByteTrack loses lock `track_id` |
 | `SCENE_CUT_THRESH` | `0.65` | Grayscale-histogram correlation below this marks a hard broadcast cut |
 | `SCENE_CUT_SUPPRESS_FRAMES` | `45` | Frames after a cut where ball events are suppressed while the shot/lock stabilizes |
@@ -130,11 +131,15 @@ Health check: `GET http://localhost:8000/health`
 
 ## API
 
+### Badminton mode
+
+Set `"sport": "badminton"` in `details` with `courtSide` (`"near"` or `"far"`) and `primaryJerseyColor`. Jersey OCR and ball events are skipped; the pipeline locks the target by **court side** (with shirt-color fallback) and returns movement stats in metres when calibration uses the singles court (**13.4 m × 6.1 m**). Save court calibration while Badminton is selected in the UI so dimensions are stored correctly. Rally metrics (rally wins, win rate, duration, winners) need `yolov8m_shuttlecock.pt` (see [weights/README.md](weights/README.md#shuttle-detector-yolov8-badminton)); without it they stay null with `badminton_stats_unavailable_reason: no_shuttle_weights`.
+
 ### `POST /api/analyze`
 
 Uses the same `run_pipeline()` as `python -m backend.cli` (see [CLI](#cli-smoke-test-without-http)).
 
-**Pitch calibration:** same lookup as the CLI — `PITCH_CALIBRATION_NAME` (default `testmatch2`). The upload filename is **not** used to pick `{stem}.json` automatically. After saving pitch corners in the UI, the frontend sends optional form field `calibration_name` (e.g. `lozano` for `lozano.mp4`) so that saved JSON is tried first, then `testmatch2`.
+**Pitch calibration:** the dashboard sends `calibration_name` (video stem) only after court corners are saved for that upload. The CLI uses `calibration_keys_for_run()` with `PITCH_CALIBRATION_NAME` (default `testmatch2`) and optional `{upload_stem}.json` when the file exists — pass the same stem via env or align keys so HTTP and CLI runs match.
 
 Multipart form:
 
@@ -218,7 +223,7 @@ A sample details file is at [backend/sample-details.json](sample-details.json).
 
 Frontend: set `NEXT_PUBLIC_RENDER_ANALYZE_VIDEO=1` in `.env.local` to request rendering from the dashboard.
 
-`scripts/dev_backend.sh` sets `MAX_FRAMES=1500` for faster dev runs; raw `uvicorn` defaults to `5000` unless you export `MAX_FRAMES`.
+`scripts/dev_backend.sh` sets `MAX_FRAMES=6000`; raw `uvicorn` uses the same default unless you export `MAX_FRAMES`.
 
 ### Mask overlay video (debug)
 

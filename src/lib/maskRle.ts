@@ -1,4 +1,4 @@
-import type { MaskRle, Row } from "@/types/analysis";
+import type { MaskRle, Row, ShuttleSample } from "@/types/analysis";
 
 /** Decode row-major RLE to dense mask (index = y * w + x). */
 export function decodeMaskRle(rle: MaskRle): boolean[] {
@@ -117,6 +117,53 @@ export function rowAtPlaybackTime(
     }
   }
   return bestDt <= tolerance ? best : undefined;
+}
+
+/** Nearest shuttle sample for the current playback frame. */
+export function shuttleAtPlaybackTime(
+  currentTime: number,
+  videoFps: number,
+  samples: ShuttleSample[],
+  frameOffset = 0,
+): ShuttleSample | undefined {
+  if (!samples.length) return undefined;
+  const frame = Math.round(currentTime * videoFps) + frameOffset;
+  const exact = samples.find((s) => s.frame === frame);
+  if (exact) return exact;
+
+  const tolerance =
+    videoFps > 0 ? Math.max(8, Math.round(videoFps * 0.25)) : 8;
+  let best: ShuttleSample | undefined;
+  let bestDelta = tolerance + 1;
+  for (const sample of samples) {
+    const delta = Math.abs(sample.frame - frame);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = sample;
+    }
+  }
+  return bestDelta <= tolerance ? best : undefined;
+}
+
+/** Orange shuttle marker with white ring (matches backend overlay). */
+export function drawShuttleHighlight(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+) {
+  const radius = 8;
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#ffffff";
+  ctx.fillStyle = "rgb(255, 165, 0)";
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius + 3, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
 }
 
 function parseRgba(css: string): [number, number, number, number] {

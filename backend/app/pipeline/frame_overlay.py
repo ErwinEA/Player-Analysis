@@ -145,3 +145,71 @@ def draw_tracks(
         draw_ball_triangle(out, ball_bbox)
 
     return out
+
+
+def draw_shuttle_dot(
+    img: np.ndarray,
+    cx: float,
+    cy: float,
+    *,
+    radius: int = 8,
+    color: tuple[int, int, int] = (0, 165, 255),
+) -> None:
+    """High-contrast shuttle marker (orange fill + white ring)."""
+    h, w = img.shape[:2]
+    ix, iy = int(round(cx)), int(round(cy))
+    if not (0 <= ix < w and 0 <= iy < h):
+        return
+    cv2.circle(img, (ix, iy), radius + 3, WHITE, 2, lineType=cv2.LINE_AA)
+    cv2.circle(img, (ix, iy), radius, color, -1, lineType=cv2.LINE_AA)
+    cv2.circle(img, (ix, iy), radius, WHITE, 1, lineType=cv2.LINE_AA)
+
+
+def draw_rally_end_flash(
+    img: np.ndarray,
+    bbox: list[float],
+    *,
+    color: tuple[int, int, int] = WHITE,
+    thickness: int = 3,
+) -> None:
+    h, w = img.shape[:2]
+    x1, y1, x2, y2 = _clip_bbox(bbox, w, h)
+    if x2 <= x1 or y2 <= y1:
+        return
+    cv2.rectangle(img, (x1, y1), (x2, y2), color, thickness, lineType=cv2.LINE_AA)
+
+
+def draw_overlay_badminton(
+    frame: np.ndarray,
+    tracks: list[TrackDraw],
+    *,
+    locked_track_id: int | None,
+    court_side_label: str,
+    shuttle_px: tuple[float, float] | None = None,
+    rally_state: str = "IDLE",
+) -> np.ndarray:
+    """Badminton annotated frame: court-side label, optional shuttle, rally tint."""
+    out = frame.copy()
+    locked_color = CYAN if rally_state == "LIVE" else YELLOW
+
+    for tr in tracks:
+        if locked_track_id is not None and tr.track_id == locked_track_id:
+            continue
+        thickness = 1 if tr.confidence < 0.5 else 2
+        draw_foot_ellipse(out, tr.bbox, color=CYAN, thickness=thickness)
+        draw_label_top_center(out, tr.bbox, str(tr.track_id), color=CYAN)
+
+    if locked_track_id is not None:
+        for tr in tracks:
+            if tr.track_id != locked_track_id:
+                continue
+            label = court_side_label or tr.label or str(tr.track_id)
+            draw_foot_ellipse(out, tr.bbox, color=locked_color, thickness=3)
+            draw_label_top_center(out, tr.bbox, label, color=locked_color)
+            if rally_state == "END":
+                draw_rally_end_flash(out, tr.bbox)
+
+    if shuttle_px is not None:
+        draw_shuttle_dot(out, shuttle_px[0], shuttle_px[1])
+
+    return out

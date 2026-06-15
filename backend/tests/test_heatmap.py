@@ -111,6 +111,69 @@ def test_summarize_positions_attacking_right():
     assert zs.wide_pct > zs.central_pct
 
 
+def test_badminton_heatmap_filters_cross_net_positions():
+    """Locked near player must not accumulate heat on the far court half."""
+    from backend.app.pipeline.pitch_homography import build_calibration
+
+    w, h = 1280, 720
+    cal = build_calibration(
+        "badminton",
+        [[w * 0.2, h * 0.2], [w * 0.8, h * 0.2], [w * 0.8, h * 0.8], [w * 0.2, h * 0.8]],
+        image_size=(w, h),
+        length_m=13.4,
+        width_m=6.1,
+    )
+    mid = cal.pitch_length_m / 2.0
+    near_rows = []
+    far_rows = []
+    for i in range(20):
+        # Homography fans near-court image X across both length halves.
+        foot_x = 0.32 if i % 2 == 0 else 0.68
+        near_rows.append(
+            Row(
+                t=float(i),
+                frame=i,
+                track=1,
+                player=None,
+                x=foot_x,
+                y=0.75,
+                bbox=[w * foot_x - 30, 520.0 + i, w * foot_x + 30, 620.0 + i],
+                foot_x=foot_x,
+                foot_y=0.78,
+            )
+        )
+        far_rows.append(
+            Row(
+                t=float(i),
+                frame=100 + i,
+                track=1,
+                player=None,
+                x=0.5,
+                y=0.25,
+                bbox=[500.0, 120.0 + i, 560.0, 220.0 + i],
+                foot_x=0.42,
+                foot_y=0.22,
+            )
+        )
+    mixed = near_rows + far_rows
+    unfiltered = build_heatmap_from_rows(mixed, cal, fps=30.0)
+    filtered = build_heatmap_from_rows(mixed, cal, fps=30.0, court_side="near")
+    assert filtered.sample_count <= unfiltered.sample_count
+    assert filtered.sample_count > 0
+    grid = bin_positions(
+        meter_positions_from_rows(mixed, cal, court_side="near"),
+        length_m=cal.pitch_length_m,
+        width_m=cal.pitch_width_m,
+        grid_cols=53,
+        grid_rows=34,
+    )
+    cell_x = cal.pitch_length_m / 53
+    for col in range(53):
+        cell_center_x = (col + 0.5) * cell_x
+        if cell_center_x > mid + 0.1 and grid[:, col].sum() > 0:
+            raise AssertionError("cross-net heat remains after court-side filter")
+
+
 def test_build_zone_summary_hottest_cell():
     positions = [(10.0, 10.0), (10.2, 10.1), (10.1, 9.9)]
     grid = bin_positions(

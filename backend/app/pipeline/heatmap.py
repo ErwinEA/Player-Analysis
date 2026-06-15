@@ -15,8 +15,18 @@ from backend.app.pipeline.pitch_homography import (
     PITCH_LENGTH_M,
     PITCH_WIDTH_M,
     PitchCalibration,
+    is_badminton_court,
     is_on_pitch,
+    render_badminton_court_template,
     render_pitch_template,
+)
+from backend.app.pipeline.sports.badminton_utils import (
+    CourtSide,
+    filter_positions_to_court_half,
+    filter_rows_by_court_side,
+    mask_grid_to_court_half,
+    median_foot_x_px,
+    metre_half_for_court_side,
 )
 from backend.app.schemas import Row
 
@@ -202,15 +212,30 @@ def meter_positions_from_rows(
     calibration: PitchCalibration,
     *,
     fps: float = 30.0,
+    court_side: CourtSide | str | None = None,
 ) -> list[tuple[float, float]]:
     """Foot positions on the pitch in meters (x along length, y along width)."""
-    points = trajectory_points_from_rows(rows, fps=fps, calibration=calibration)
+    scoped = rows
+    image_probe_x: float | None = None
+    if court_side in ("near", "far") and is_badminton_court(
+        calibration.pitch_length_m, calibration.pitch_width_m
+    ):
+        scoped = filter_rows_by_court_side(rows, calibration, court_side)
+        image_probe_x = median_foot_x_px(scoped, calibration)
+    points = trajectory_points_from_rows(scoped, fps=fps, calibration=calibration)
     length_m = calibration.pitch_length_m
     width_m = calibration.pitch_width_m
     positions: list[tuple[float, float]] = []
     for _t, x_m, y_m in points:
         if is_on_pitch(x_m, y_m, length_m=length_m, width_m=width_m):
             positions.append((x_m, y_m))
+    if court_side in ("near", "far"):
+        positions = filter_positions_to_court_half(
+            positions,
+            calibration,
+            court_side,
+            image_probe_x=image_probe_x,
+        )
     return positions
 
 
@@ -272,11 +297,18 @@ def render_heatmap(
 ) -> np.ndarray:
     """Overlay smoothed heat grid on a top-down pitch template (BGR)."""
     cfg = config or HeatmapConfig()
-    template = render_pitch_template(
-        length_m=length_m,
-        width_m=width_m,
-        pixels_per_meter=cfg.pixels_per_meter,
-    )
+    if is_badminton_court(length_m, width_m):
+        template = render_badminton_court_template(
+            length_m=length_m,
+            width_m=width_m,
+            pixels_per_meter=cfg.pixels_per_meter,
+        )
+    else:
+        template = render_pitch_template(
+            length_m=length_m,
+            width_m=width_m,
+            pixels_per_meter=cfg.pixels_per_meter,
+        )
     h, w = template.shape[:2]
 
     if grid.max() <= 0:
@@ -306,10 +338,19 @@ def build_heatmap(
     *,
     fps: float = 30.0,
     config: HeatmapConfig | None = None,
+    court_side: CourtSide | str | None = None,
 ) -> tuple[HeatmapResult, np.ndarray]:
     """Full pipeline: rows → meter positions → grid → smooth → render."""
     cfg = config or HeatmapConfig()
-    positions = meter_positions_from_rows(rows, calibration, fps=fps)
+    image_probe_x: float | None = None
+    if court_side in ("near", "far") and is_badminton_court(
+        calibration.pitch_length_m, calibration.pitch_width_m
+    ):
+        scoped = filter_rows_by_court_side(rows, calibration, court_side)
+        image_probe_x = median_foot_x_px(scoped, calibration)
+    positions = meter_positions_from_rows(
+        rows, calibration, fps=fps, court_side=court_side
+    )
     grid = bin_positions(
         positions,
         length_m=calibration.pitch_length_m,
@@ -317,6 +358,15 @@ def build_heatmap(
         grid_cols=cfg.grid_cols,
         grid_rows=cfg.grid_rows,
     )
+    if (
+        court_side in ("near", "far")
+        and positions
+        and is_badminton_court(calibration.pitch_length_m, calibration.pitch_width_m)
+    ):
+        half = metre_half_for_court_side(
+            positions, calibration, court_side, image_probe_x=image_probe_x
+        )
+        grid = mask_grid_to_court_half(grid, calibration, half)
     smoothed = smooth_grid(grid, cfg.smooth_sigma)
     image = render_heatmap(
         smoothed,
@@ -350,8 +400,11 @@ def build_heatmap_from_rows(
     *,
     fps: float = 30.0,
     config: HeatmapConfig | None = None,
+    court_side: CourtSide | str | None = None,
 ) -> HeatmapResult:
-    result, _ = build_heatmap(rows, calibration, fps=fps, config=config)
+    result, _ = build_heatmap(
+        rows, calibration, fps=fps, config=config, court_side=court_side
+    )
     return result
 
 

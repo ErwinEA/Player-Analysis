@@ -146,3 +146,14 @@ export function LocationIcon({ className }: IconProps) {
     </svg>
   );
 }
+
+export function EyedropperIcon({ className }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="m16 13 5-5-3-3-5 5" />
+      <path d="M11 18 4 11l7-7 7 7-7 7z" />
+      <path d="m2 22 3-1" />
+      <path d="M14 6l4 4" />
+    </svg>
+  );
+}

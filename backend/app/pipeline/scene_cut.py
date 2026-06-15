@@ -4,6 +4,10 @@ Broadcast highlights interleave tactical wide shots with replays, close-ups, and
 graphics. Each hard cut invalidates the pitch homography and the player tracker's
 motion assumptions, so the pipeline must detect cuts to reset tracker/lock state and
 suppress ball events for a short window afterwards.
+
+On a cut the pipeline also resets the shuttle Kalman smoother and, while
+``is_suppressed`` is true, skips Kalman prediction so overlay/rally logic cannot
+bridge stale trajectories across the boundary.
 """
 
 from __future__ import annotations

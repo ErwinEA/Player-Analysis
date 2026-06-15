@@ -1,0 +1,164 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.dialog {
+  background: #1f2937;
+  color: #f9fafb;
+  border-radius: 12px;
+  max-width: min(96vw, 960px);
+  max-height: 92vh;
+  overflow: auto;
+  padding: 1.25rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.closeBtn {
+  background: transparent;
+  border: 1px solid #4b5563;
+  color: inherit;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.hint {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  margin: 0 0 0.75rem;
+}
+
+.framePicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem;
+  background: #111827;
+  border-radius: 8px;
+}
+
+.frameLabel {
+  font-size: 0.8rem;
+  color: #d1d5db;
+  flex: 1 1 100%;
+}
+
+.frameSlider {
+  flex: 1 1 200px;
+  min-width: 160px;
+}
+
+.frameTime {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  font-variant-numeric: tabular-nums;
+}
+
+.canvasWrap {
+  overflow: auto;
+  max-height: 60vh;
+  border: 1px solid #374151;
+  border-radius: 8px;
+}
+
+.canvas {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  cursor: crosshair;
+}
+
+.canvas:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.preview {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: #111827;
+  border-radius: 8px;
+  border: 1px solid #374151;
+}
+
+.previewSwatch {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  flex-shrink: 0;
+}
+
+.previewText {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #e5e7eb;
+  font-variant-numeric: tabular-nums;
+}
+
+.error {
+  color: #fca5a5;
+  font-size: 0.875rem;
+  margin: 0.5rem 0 0;
+}
+
+.status {
+  color: #9ca3af;
+  font-size: 0.875rem;
+}
+
+.footer {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.footer button {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #4b5563;
+  background: #374151;
+  color: #fff;
+  cursor: pointer;
+}
+
+.footer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.footer button:focus-visible,
+.closeBtn:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.primary {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+}

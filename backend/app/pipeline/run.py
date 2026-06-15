@@ -9,6 +9,7 @@ import cv2
 
 logger = logging.getLogger(__name__)
 
+from backend.app.pipeline.badminton_stats import build_badminton_stats
 from backend.app.pipeline.bbox import is_valid_bbox
 from backend.app.pipeline.color import jersey_color_score
 from backend.app.pipeline.debug_ocr import OcrDebug
@@ -18,7 +19,12 @@ from backend.app.pipeline.ocr import JerseyOCR
 from backend.app.pipeline.reid import get_reid_extractor
 from backend.app.pipeline.scene_cut import SceneCutDetector
 from backend.app.pipeline.tracker import PlayerTracker
-from backend.app.pipeline.frame_overlay import TrackDraw, draw_tracks
+from backend.app.pipeline.frame_overlay import (
+    TrackDraw,
+    draw_overlay_badminton,
+    draw_tracks,
+)
+from backend.app.pipeline.sports.config import calibration_matches_sport
 from backend.app.pipeline.heatmap import build_heatmap_from_rows
 from backend.app.pipeline.movement_stats import (
     compute_movement_stats_from_rows,
@@ -37,6 +43,8 @@ from backend.app.pipeline.segmentation import (
     run_segmentation_for_target,
     sam_enabled,
     sam_warmup_frames,
+    segment_result_from_bbox,
+    should_run_sam_this_frame,
 )
 from backend.app.schemas import (
     AnalyzeResponse,
@@ -46,6 +54,7 @@ from backend.app.schemas import (
     InferredBallEvent,
     PlayerEventCounts,
     Row,
+    ShuttleSample,
     TargetMatch,
     VideoMeta,
     jersey_colors_configured,
@@ -61,8 +70,8 @@ def _track_min_age() -> int:
 
 
 # Legacy pipeline cap: detection + tracking run on at most this many frames.
-DEFAULT_MAX_FRAMES = 5000
-MAX_FRAMES_ENV_CAP = 5000
+DEFAULT_MAX_FRAMES = 6000
+MAX_FRAMES_ENV_CAP = 6000
 UNLIMITED_FRAME_CAP = 10_000_000
 
 
@@ -156,10 +165,16 @@ def _calibration_matches_video(
 def _resolve_pitch_calibration(
     *,
     calibration_key: str | None,
+    upload_filename: str | None = None,
 ) -> tuple[PitchCalibration | None, str | None]:
     from backend.app.pitch_api import calibration_keys_for_run
 
-    return resolve_calibration(*calibration_keys_for_run(explicit_key=calibration_key))
+    return resolve_calibration(
+        *calibration_keys_for_run(
+            explicit_key=calibration_key,
+            upload_filename=upload_filename,
+        )
+    )
 
 
 def _ball_events_enabled() -> bool:
@@ -515,6 +530,7 @@ def run_pipeline(
     details: PlayerDetails,
     *,
     calibration_key: str | None = None,
+    upload_filename: str | None = None,
     include_masks_in_response: bool = False,
     output_video_path: str | None = None,
 ) -> AnalyzeResponse:
@@ -555,15 +571,19 @@ def run_pipeline(
         track_frame_count: dict[int, int] = defaultdict(int)
         locked_at_frame: int | None = None
         segmentation_started_at_frame: int | None = None
+        last_sam_frame: int | None = None
         last_seg_bbox: list[float] | None = None
         frame_cap = _max_frames()
         frame_start = _frame_start()
         kit_primary, kit_secondary = _kit_colors(details)
+        is_football = details.sport == "football"
+        is_badminton = details.sport == "badminton"
 
         logger.info(
-            "Pipeline processing: video=%s frames_cap=%s jersey=%s calibration=%s",
+            "Pipeline processing: video=%s frames_cap=%s sport=%s jersey=%s calibration=%s",
             video_path,
             frame_cap,
+            details.sport,
             details.jerseyNumber,
             calibration_key or "(default)",
         )
@@ -571,6 +591,7 @@ def run_pipeline(
         calibration_skipped_reason: str | None = None
         calibration, matched_cal_name = _resolve_pitch_calibration(
             calibration_key=calibration_key,
+            upload_filename=upload_filename,
         )
         if calibration is not None and not _calibration_matches_video(
             calibration, width, height
@@ -578,6 +599,16 @@ def run_pipeline(
             calibration_skipped_reason = "size_mismatch"
             calibration = None
             matched_cal_name = None
+        if calibration is not None:
+            expected_sport = "badminton" if is_badminton else "football"
+            if not calibration_matches_sport(
+                sport=expected_sport,
+                pitch_length_m=calibration.pitch_length_m,
+                pitch_width_m=calibration.pitch_width_m,
+            ):
+                calibration_skipped_reason = "court_dimension_mismatch"
+                calibration = None
+                matched_cal_name = None
 
         ball_detector = None
         ball_states: list = []
@@ -588,11 +619,44 @@ def run_pipeline(
         this_frame_foot_px: tuple[float, float] | None = None
         this_frame_target_visible = False
         this_frame_seg_source: str | None = None
-        enable_ball = _ball_events_enabled()
+        enable_ball = _ball_events_enabled() and is_football
         ball_debug_dir = _ball_debug_dir()
         scene_detector = SceneCutDetector()
         scene_cut_count = 0
         suppressed_frame_count = 0
+        last_known_lock_track_id: int | None = None
+        badminton_rally_state = "IDLE"
+        all_rally_events: list = []
+        shuttle_detector = None
+        rally_tracker = None
+        shuttle_rally_kalman_gap = 0
+        shuttle_rally_kalman_max = max(
+            0, int(os.environ.get("SHUTTLE_RALLY_KALMAN_GAP", "3"))
+        )
+        badminton_net_y = height / 2.0
+        shuttle_stride = max(1, int(os.environ.get("SHUTTLE_STRIDE", "1")))
+        shuttle_samples: list[ShuttleSample] = []
+        shuttle_kalman = None
+        shuttle_kalman_gap_max = max(1, int(os.environ.get("SHUTTLE_KALMAN_GAP_MAX", "15")))
+        if is_badminton:
+            from backend.app.pipeline.badminton.shuttle_detector import (
+                ShuttleDetector,
+                ShuttleKalman,
+            )
+
+            if calibration is not None:
+                from backend.app.pipeline.sports.badminton_utils import net_line_y_px
+
+                try:
+                    badminton_net_y = net_line_y_px(calibration)
+                except ValueError:
+                    pass
+            shuttle_detector = ShuttleDetector()
+            shuttle_kalman = ShuttleKalman(gap_max=shuttle_kalman_gap_max)
+            if shuttle_detector.available:
+                from backend.app.pipeline.badminton.rally_tracker import RallyTracker
+
+                rally_tracker = RallyTracker(net_y_px=badminton_net_y, fps=fps)
         # Lock windows bounded by scene cuts; archived (not discarded) on each cut so
         # the best/longest epoch is analysed instead of whatever happens to be last.
         epochs: list = []
@@ -640,6 +704,7 @@ def run_pipeline(
                 seg_state = SegmentationState()
                 locked_at_frame = None
                 segmentation_started_at_frame = None
+                last_sam_frame = None
                 last_seg_bbox = None
                 last_anchor_foot_px = None
                 if ball_detector is not None:
@@ -649,6 +714,17 @@ def run_pipeline(
                 ball_states = []
                 target_samples = []
                 ball_carry_track_id = None
+                last_known_lock_track_id = None
+                if rally_tracker is not None:
+                    from backend.app.pipeline.badminton.rally_tracker import RallyTracker
+
+                    rally_tracker.finalize(frame_idx)
+                    all_rally_events.extend(rally_tracker.events)
+                    rally_tracker = RallyTracker(net_y_px=badminton_net_y, fps=fps)
+                    badminton_rally_state = "IDLE"
+                    shuttle_rally_kalman_gap = 0
+                if shuttle_kalman is not None:
+                    shuttle_kalman.reset()
                 logger.info("Scene cut at frame %s — tracker/lock reset", frame_idx)
 
             skip_ball = scene_detector.is_suppressed
@@ -707,66 +783,71 @@ def run_pipeline(
                         )
                         matcher.observe_color(track_id, color_score)
 
-                    should_ocr = frame_idx - last_ocr_frame[track_id] >= ocr_every
-                    if should_ocr:
-                        last_ocr_frame[track_id] = frame_idx
-                        num, num_conf, num_raw = _read_and_observe_jersey_number(
-                            matcher,
-                            ocr,
-                            frame=frame,
-                            bbox=bbox,
-                            track_id=track_id,
-                            target_jersey=details.jerseyNumber,
-                            frame_idx=frame_idx,
-                            embedding=embedding,
-                            ocr_every=ocr_every,
+                    if is_football:
+                        should_ocr = (
+                            frame_idx - last_ocr_frame[track_id] >= ocr_every
                         )
-                        name, name_conf, name_raw = ocr.read_name_detailed(frame, bbox)
-                        matcher.observe_name(track_id, name, name_conf)
-                        if num_conf > 0:
-                            last_ocr_conf[track_id] = num_conf
-                        from backend.app.pipeline.segmentation import (
-                            seg_jersey_ocr_min_conf,
-                        )
+                        if should_ocr:
+                            last_ocr_frame[track_id] = frame_idx
+                            num, num_conf, num_raw = _read_and_observe_jersey_number(
+                                matcher,
+                                ocr,
+                                frame=frame,
+                                bbox=bbox,
+                                track_id=track_id,
+                                target_jersey=details.jerseyNumber,
+                                frame_idx=frame_idx,
+                                embedding=embedding,
+                                ocr_every=ocr_every,
+                            )
+                            name, name_conf, name_raw = ocr.read_name_detailed(
+                                frame, bbox
+                            )
+                            matcher.observe_name(track_id, name, name_conf)
+                            if num_conf > 0:
+                                last_ocr_conf[track_id] = num_conf
+                            from backend.app.pipeline.segmentation import (
+                                seg_jersey_ocr_min_conf,
+                            )
 
-                        if (
-                            num == details.jerseyNumber
-                            and num_conf >= seg_jersey_ocr_min_conf()
-                            and details.jerseyNumber > 0
-                        ):
                             if (
-                                frame_ocr_match is None
-                                or num_conf > frame_ocr_match[1]
+                                num == details.jerseyNumber
+                                and num_conf >= seg_jersey_ocr_min_conf()
+                                and details.jerseyNumber > 0
                             ):
-                                frame_ocr_match = (track_id, num_conf)
+                                if (
+                                    frame_ocr_match is None
+                                    or num_conf > frame_ocr_match[1]
+                                ):
+                                    frame_ocr_match = (track_id, num_conf)
 
-                        crop_path = ocr_debug.save_crop(
-                            frame_idx,
-                            track_id,
-                            JerseyOCR.full_kit_crop(frame, bbox),
-                        )
-                        ocr_debug.log(
-                            frame_idx=frame_idx,
-                            track_id=track_id,
-                            number_raw=num_raw,
-                            parsed_number=num,
-                            number_conf=num_conf,
-                            name_raw=name_raw,
-                            parsed_name=name,
-                            name_conf=name_conf,
-                            color_score=color_score,
-                            crop_path=crop_path,
-                        )
+                            crop_path = ocr_debug.save_crop(
+                                frame_idx,
+                                track_id,
+                                JerseyOCR.full_kit_crop(frame, bbox),
+                            )
+                            ocr_debug.log(
+                                frame_idx=frame_idx,
+                                track_id=track_id,
+                                number_raw=num_raw,
+                                parsed_number=num,
+                                number_conf=num_conf,
+                                name_raw=name_raw,
+                                parsed_name=name,
+                                name_conf=name_conf,
+                                color_score=color_score,
+                                crop_path=crop_path,
+                            )
 
-                        new_lock = matcher.try_acquire_lock()
-                        if new_lock is not None:
-                            if locked_at_frame is None:
-                                locked_at_frame = frame_idx
-                            seg_state.acquire_lock(new_lock.track_id)
-                            if track_id == new_lock.track_id:
-                                seg_state.record_visible_frame(frame_idx)
-                        elif matcher.lock is not None:
-                            matcher.maybe_upgrade_lock(track_id)
+                            new_lock = matcher.try_acquire_lock()
+                            if new_lock is not None:
+                                if locked_at_frame is None:
+                                    locked_at_frame = frame_idx
+                                seg_state.acquire_lock(new_lock.track_id)
+                                if track_id == new_lock.track_id:
+                                    seg_state.record_visible_frame(frame_idx)
+                            elif matcher.lock is not None:
+                                matcher.maybe_upgrade_lock(track_id)
 
                 player = (
                     details.jerseyNumber
@@ -795,6 +876,54 @@ def run_pipeline(
                         ocr_conf=last_ocr_conf.get(track_id),
                     )
                 )
+
+            if is_badminton and not matcher.is_locked:
+                from backend.app.pipeline.sports.badminton_utils import (
+                    disambiguate_with_fallback,
+                    net_line_y_px,
+                )
+
+                mature_tracks = [
+                    tr
+                    for tr in tracks
+                    if track_frame_count.get(tr["track_id"], 0) >= track_min_age
+                ]
+                court_side = details.courtSide
+                if court_side in ("near", "far"):
+                    if calibration is not None:
+                        try:
+                            net_y = net_line_y_px(calibration)
+                        except ValueError:
+                            net_y = height / 2.0
+                    else:
+                        net_y = height / 2.0
+                    tid, _lock_hint = disambiguate_with_fallback(
+                        mature_tracks,
+                        court_side,
+                        net_y,
+                        matcher.color_scores,
+                    )
+                    if tid is not None:
+                        if _lock_hint == "color":
+                            scores = matcher.color_scores.get(tid, [])
+                            conf = sum(scores) / len(scores) if scores else 0.0
+                            matcher.apply_color_lock(tid, confidence=conf)
+                        else:
+                            matcher.apply_court_side_lock(tid)
+                        if locked_at_frame is None:
+                            locked_at_frame = frame_idx
+                        seg_state.acquire_lock(tid)
+                        seg_state.record_visible_frame(frame_idx)
+                        last_known_lock_track_id = tid
+                        logger.info(
+                            "Badminton %s lock: track=%s frame=%s side=%s",
+                            _lock_hint,
+                            tid,
+                            frame_idx,
+                            court_side,
+                        )
+            elif is_badminton and matcher.lock is not None:
+                last_known_lock_track_id = matcher.lock.track_id
 
             # Warmup: target visible if locked track OR ReID fallback finds them.
             lock = matcher.lock
@@ -855,15 +984,21 @@ def run_pipeline(
                 )
                 if resolved is not None:
                     seg_tid, seg_bbox, is_reid_fb = resolved
-                    seg_result = run_segmentation_for_target(
-                        frame,
-                        seg_bbox,
-                        seg_tid,
-                        is_reid_fallback=is_reid_fb,
-                        width=width,
-                        height=height,
-                        segmenter=segmenter,
-                    )
+                    if should_run_sam_this_frame(frame_idx, last_sam_frame):
+                        seg_result = run_segmentation_for_target(
+                            frame,
+                            seg_bbox,
+                            seg_tid,
+                            is_reid_fallback=is_reid_fb,
+                            width=width,
+                            height=height,
+                            segmenter=segmenter,
+                        )
+                        last_sam_frame = frame_idx
+                    else:
+                        seg_result = segment_result_from_bbox(
+                            seg_bbox, seg_tid, width, height
+                        )
                     if segmentation_started_at_frame is None:
                         segmentation_started_at_frame = (
                             seg_state.segmentation_started_at_frame
@@ -875,7 +1010,8 @@ def run_pipeline(
                         else seg_bbox
                     )
                     if (
-                        is_valid_bbox(ocr_bbox, frame.shape, min_size=16)
+                        is_football
+                        and is_valid_bbox(ocr_bbox, frame.shape, min_size=16)
                         and frame_idx - last_ocr_frame[seg_tid] >= ocr_every
                     ):
                         last_ocr_frame[seg_tid] = frame_idx
@@ -948,7 +1084,9 @@ def run_pipeline(
                         )
                         this_frame_target_visible = True
                         this_frame_seg_source = seg_result.segment_source
-                elif last_seg_bbox is not None and details.jerseyNumber > 0:
+                elif last_seg_bbox is not None and (
+                    details.jerseyNumber > 0 or is_badminton
+                ):
                     # Target was not positively located this frame (no jersey/kit/ReID
                     # match). Continue the trajectory from the last good bbox, but DO NOT
                     # segment: prompting MobileSAM with a stale box segments whatever now
@@ -1094,6 +1232,64 @@ def run_pipeline(
                             )
                         )
 
+            shuttle_px_frame: tuple[float, float] | None = None
+            overlay_shuttle_px: tuple[float, float] | None = None
+            if shuttle_detector is not None and shuttle_kalman is not None:
+                # After a scene cut, player tracker and shuttle Kalman are reset above.
+                # While the shot stabilizes, only raw detections feed overlay/rally
+                # so predicted positions cannot carry across the boundary.
+                shuttle_scene_suppressed = scene_detector.is_suppressed
+                if shuttle_stride <= 1 or frame_idx % shuttle_stride == 0:
+                    shuttle_det = shuttle_detector.detect(frame)
+                    if shuttle_det is not None:
+                        shuttle_px_frame = shuttle_det.center_px
+                        smooth_px = shuttle_kalman.update(
+                            shuttle_det.center_px[0], shuttle_det.center_px[1]
+                        )
+                        overlay_shuttle_px = (
+                            shuttle_px_frame
+                            if shuttle_scene_suppressed
+                            else smooth_px
+                        )
+                        shuttle_samples.append(
+                            ShuttleSample(
+                                frame=frame_idx,
+                                cx=round(shuttle_det.center_px[0], 2),
+                                cy=round(shuttle_det.center_px[1], 2),
+                                conf=round(shuttle_det.conf, 3),
+                            )
+                        )
+                    elif not shuttle_scene_suppressed:
+                        overlay_shuttle_px = shuttle_kalman.predict()
+                elif not shuttle_scene_suppressed:
+                    # Stride skip: advance the Kalman prediction so it stays current.
+                    overlay_shuttle_px = shuttle_kalman.predict()
+
+                locked_foot_px: tuple[float, float] | None = None
+                if matcher.lock is not None:
+                    for tr in tracks:
+                        if tr["track_id"] == matcher.lock.track_id:
+                            locked_foot_px = foot_position_pixels(tr["bbox"])
+                            break
+                if rally_tracker is not None:
+                    rally_shuttle_px = shuttle_px_frame
+                    if rally_shuttle_px is not None:
+                        shuttle_rally_kalman_gap = 0
+                    elif (
+                        not shuttle_scene_suppressed
+                        and overlay_shuttle_px is not None
+                        and shuttle_rally_kalman_gap < shuttle_rally_kalman_max
+                    ):
+                        rally_shuttle_px = overlay_shuttle_px
+                        shuttle_rally_kalman_gap += 1
+                    else:
+                        rally_shuttle_px = None
+                        if shuttle_px_frame is None:
+                            shuttle_rally_kalman_gap += 1
+                    badminton_rally_state = rally_tracker.update(
+                        frame_idx, rally_shuttle_px, locked_foot_px
+                    )
+
             if video_writer is not None:
                 frame_lock = matcher.lock
                 locked_id = frame_lock.track_id if frame_lock is not None else None
@@ -1102,20 +1298,29 @@ def run_pipeline(
                         track_id=tr["track_id"],
                         bbox=tr["bbox"],
                         confidence=tr.get("score", 1.0),
-                        label=(
-                            str(details.jerseyNumber)
-                            if locked_id == tr["track_id"] and details.jerseyNumber > 0
-                            else None
-                        ),
+                        label=str(tr["track_id"]),
                     )
                     for tr in tracks
                 ]
-                annotated = draw_tracks(
-                    frame,
-                    track_draws,
-                    locked_track_id=locked_id,
-                    ball_bbox=ball_bbox,
-                )
+                if is_badminton:
+                    court_side_label = (
+                        "NEAR" if details.courtSide == "near" else "FAR"
+                    )
+                    annotated = draw_overlay_badminton(
+                        frame,
+                        track_draws,
+                        locked_track_id=locked_id,
+                        court_side_label=court_side_label,
+                        shuttle_px=overlay_shuttle_px,
+                        rally_state=badminton_rally_state,
+                    )
+                else:
+                    annotated = draw_tracks(
+                        frame,
+                        track_draws,
+                        locked_track_id=locked_id,
+                        ball_bbox=ball_bbox,
+                    )
                 video_writer.write(annotated)
 
             frame_idx += 1
@@ -1167,7 +1372,18 @@ def run_pipeline(
         duration_s = frame_idx / fps if fps > 0 else 0.0
         final_lock = matcher.finalize()
 
-        if final_lock is not None and details.jerseyNumber > 0:
+        if (
+            final_lock is not None
+            and locked_at_frame is None
+            and final_lock.track_id is not None
+        ):
+            track_frames = [
+                r.frame for r in rows if r.track == final_lock.track_id
+            ]
+            if track_frames:
+                locked_at_frame = min(track_frames)
+
+        if final_lock is not None and (details.jerseyNumber > 0 or is_badminton):
             target_id = final_lock.track_id
             rows = [
                 row.model_copy(update={"player": details.jerseyNumber})
@@ -1239,6 +1455,8 @@ def run_pipeline(
                         for ev in detected
                     ]
                     provenance = "inferred"
+        elif is_badminton:
+            events_unavailable_reason = "not_football"
         elif not enable_ball:
             events_unavailable_reason = None
 
@@ -1299,16 +1517,34 @@ def run_pipeline(
                 "or backend logs."
             )
         elif not masks_available and target.method == "none":
-            masks_unavailable_reason = (
-                "No player lock — enter the correct jersey number (and optional name/"
-                "jersey colors), then re-run Analyze."
-            )
+            if is_badminton:
+                if calibration is None:
+                    masks_unavailable_reason = (
+                        "No player lock — calibrate court layout, set court side and "
+                        "shirt color, then re-run Analyze."
+                    )
+                else:
+                    masks_unavailable_reason = (
+                        "No player lock — select court side and shirt color, then "
+                        "re-run Analyze."
+                    )
+            else:
+                masks_unavailable_reason = (
+                    "No player lock — enter the correct jersey number (and optional name/"
+                    "jersey colors), then re-run Analyze."
+                )
         elif not masks_available and target.method == "color":
-            masks_unavailable_reason = (
-                "Only jersey-color lock matched (OCR did not confirm the number). "
-                "Set the correct jersey number and primary/secondary kit colors, "
-                "then re-run Analyze."
-            )
+            if is_badminton:
+                masks_unavailable_reason = (
+                    "Only shirt-color lock matched (court side was ambiguous). "
+                    "Pick a clearer shirt color or court side, then re-run Analyze."
+                )
+            else:
+                masks_unavailable_reason = (
+                    "Only jersey-color lock matched (OCR did not confirm the number). "
+                    "Set the correct jersey number and primary/secondary kit colors, "
+                    "then re-run Analyze."
+                )
         elif not masks_available and target.locked_at_frame is not None:
             warmup = sam_warmup_frames()
             masks_unavailable_reason = (
@@ -1317,10 +1553,16 @@ def run_pipeline(
                 "keep the target in view after lock or lower SAM_WARMUP_FRAMES."
             )
         elif not masks_available and target.segmentation_started_at_frame is None:
-            masks_unavailable_reason = (
-                "Player lock or SAM warmup did not complete — verify jersey number/"
-                "OCR lock, then re-run Analyze."
-            )
+            if is_badminton:
+                masks_unavailable_reason = (
+                    "Player lock or SAM warmup did not complete — verify court side/"
+                    "shirt color lock, then re-run Analyze."
+                )
+            else:
+                masks_unavailable_reason = (
+                    "Player lock or SAM warmup did not complete — verify jersey number/"
+                    "OCR lock, then re-run Analyze."
+                )
 
         if len(analytics_rows) >= 2 and calibration is not None:
             stats = compute_movement_stats_from_rows(
@@ -1329,10 +1571,37 @@ def run_pipeline(
             if stats.units == "meters":
                 movement = MovementStatsSchema(**stats.to_dict())
         if analytics_rows and calibration is not None:
-            hm = build_heatmap_from_rows(analytics_rows, calibration, fps=fps)
+            hm_court_side = (
+                details.courtSide
+                if is_badminton and details.courtSide in ("near", "far")
+                else None
+            )
+            hm = build_heatmap_from_rows(
+                analytics_rows,
+                calibration,
+                fps=fps,
+                court_side=hm_court_side,
+            )
             heatmap = HeatmapResult(**hm.to_dict())
             if hm.sample_count == 0 and calibration_skipped_reason is None:
                 calibration_skipped_reason = "positions_out_of_bounds"
+
+        badminton_stats = None
+        badminton_stats_unavailable_reason: str | None = None
+        if details.sport == "badminton":
+            if rally_tracker is not None:
+                rally_tracker.finalize(frame_idx)
+                all_rally_events.extend(rally_tracker.events)
+            badminton_stats, badminton_stats_unavailable_reason = build_badminton_stats(
+                target=target,
+                has_calibration=calibration is not None,
+                rally_events=all_rally_events or None,
+                court_side=details.courtSide,
+                fps=fps,
+                shuttle_available=(
+                    shuttle_detector is not None and shuttle_detector.available
+                ),
+            )
 
         return AnalyzeResponse(
             video=VideoMeta(
@@ -1360,6 +1629,9 @@ def run_pipeline(
             ball_samples=ball_samples,
             events_unavailable_reason=events_unavailable_reason,
             drive_contact_m=drive_contact_m,
+            badminton_stats=badminton_stats,
+            badminton_stats_unavailable_reason=badminton_stats_unavailable_reason,
+            shuttle_samples=shuttle_samples if is_badminton else [],
         )
     finally:
         if video_writer is not None:

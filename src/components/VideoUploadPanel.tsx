@@ -9,10 +9,12 @@ import {
 import {
   decodeMaskRle,
   drawMaskOnCanvasScaled,
+  drawShuttleHighlight,
   rowAtPlaybackTime,
+  shuttleAtPlaybackTime,
 } from "@/lib/maskRle";
 import type { MobileSamHealth } from "@/lib/api";
-import type { Row } from "@/types/analysis";
+import type { Row, ShuttleSample } from "@/types/analysis";
 import styles from "./VideoUploadPanel.module.css";
 import { UploadCloudIcon, VideoIcon } from "./icons";
 
@@ -26,12 +28,13 @@ type VideoUploadPanelProps = {
   trackingRows?: Row[] | null;
   videoFps?: number;
   analyzeComplete?: boolean;
-  jerseyNumber?: number;
+  playerLabel?: string;
   masksUnavailableReason?: string | null;
   mobileSamHealth?: MobileSamHealth | null;
   annotatedVideoUrl?: string | null;
   annotatedVideoUnavailableReason?: string | null;
   maskFrameOffset?: number;
+  shuttleSamples?: ShuttleSample[] | null;
 };
 
 export function VideoUploadPanel({
@@ -40,12 +43,13 @@ export function VideoUploadPanel({
   trackingRows = null,
   videoFps = 30,
   analyzeComplete = false,
-  jerseyNumber = 0,
+  playerLabel,
   masksUnavailableReason = null,
   mobileSamHealth = null,
   annotatedVideoUrl = null,
   annotatedVideoUnavailableReason = null,
   maskFrameOffset = 0,
+  shuttleSamples = null,
 }: VideoUploadPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -57,6 +61,7 @@ export function VideoUploadPanel({
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showMask, setShowMask] = useState(true);
+  const [showShuttle, setShowShuttle] = useState(true);
   const [maskStatus, setMaskStatus] = useState("");
   const [isDragging, setIsDragging] = useState(false);
 
@@ -69,6 +74,10 @@ export function VideoUploadPanel({
   );
 
   const hasMasks = maskRows.length > 0;
+  const hasShuttleSamples = Boolean(shuttleSamples && shuttleSamples.length > 0);
+  // Shuttle is baked into the annotated clip; live canvas only when scrubbing the upload.
+  const showLiveShuttle = hasShuttleSamples && showShuttle && !showingAnnotated;
+  const hasOverlay = (hasMasks && showMask) || showLiveShuttle;
   const hasTrackingRows = Boolean(trackingRows && trackingRows.length > 0);
   const samStatus = mobileSamHealth?.status;
   const maskUnavailable =
@@ -82,6 +91,11 @@ export function VideoUploadPanel({
     if (!hasMasks) return;
     setShowMask(true);
   }, [hasMasks]);
+
+  useEffect(() => {
+    if (!hasShuttleSamples) return;
+    setShowShuttle(true);
+  }, [hasShuttleSamples]);
 
   useEffect(() => {
     if (!file) {
@@ -119,11 +133,11 @@ export function VideoUploadPanel({
 
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      if (!video || !canvas || !showMask || !hasMasks) {
+      if (!video || !canvas || !hasOverlay) {
         maybeAnnounce(
-          showMask && hasMasks
-            ? "Player mask: waiting for video…"
-            : "Player mask: hidden",
+          hasOverlay
+            ? "Video overlay: waiting for video…"
+            : "Video overlay: hidden",
         );
         return;
       }
@@ -135,58 +149,89 @@ export function VideoUploadPanel({
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      const row = rowAtPlaybackTime(
-        video.currentTime,
-        videoFps,
-        maskRows,
-        maskFrameOffset,
-      );
-      if (!row?.mask_rle) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        lastPaintedFrameRef.current = null;
-        maybeAnnounce(
-          jerseyNumber > 0
-            ? `Player mask: no overlay at ${video.currentTime.toFixed(1)}s (jersey ${jerseyNumber})`
-            : `Player mask: no overlay at ${video.currentTime.toFixed(1)}s`,
-        );
-        return;
-      }
-
-      const src = row.segment_source ?? "sam";
-      const statusMessage =
-        `Player mask: on at ${video.currentTime.toFixed(1)}s (frame ${row.frame}, ${src})` +
-        (jerseyNumber > 0 ? `, jersey ${jerseyNumber}` : "");
-
-      if (lastPaintedFrameRef.current === row.frame) {
-        maybeAnnounce(statusMessage, row.frame);
-        return;
-      }
-      lastPaintedFrameRef.current = row.frame;
-
-      const mh = Math.round(row.mask_rle.size[0]);
-      const mw = Math.round(row.mask_rle.size[1]);
-
       if (canvas.width !== vw || canvas.height !== vh) {
         canvas.width = vw;
         canvas.height = vh;
       }
 
-      const mask = decodeMaskRle(row.mask_rle);
-      if (mask.length !== mw * mh) {
-        ctx.clearRect(0, 0, vw, vh);
+      const frame =
+        Math.round(video.currentTime * videoFps) + maskFrameOffset;
+      const row =
+        showMask && hasMasks
+          ? rowAtPlaybackTime(
+              video.currentTime,
+              videoFps,
+              maskRows,
+              maskFrameOffset,
+            )
+          : undefined;
+      const shuttle =
+        showLiveShuttle && shuttleSamples
+          ? shuttleAtPlaybackTime(
+              video.currentTime,
+              videoFps,
+              shuttleSamples,
+              maskFrameOffset,
+            )
+          : undefined;
+
+      if (!row?.mask_rle && !shuttle) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        lastPaintedFrameRef.current = null;
+        const parts: string[] = [];
+        if (showMask && hasMasks) parts.push("no player mask");
+        if (showLiveShuttle) parts.push("no shuttle");
+        maybeAnnounce(
+          `Video overlay at ${video.currentTime.toFixed(1)}s (${parts.join(", ")})` +
+            (playerLabel ? ` — ${playerLabel}` : ""),
+        );
         return;
       }
 
-      drawMaskOnCanvasScaled(ctx, mask, mw, mh, vw, vh);
-      maybeAnnounce(statusMessage, row.frame);
+      const paintFrame = row?.frame ?? shuttle?.frame ?? frame;
+      if (lastPaintedFrameRef.current === paintFrame && !announce) {
+        return;
+      }
+      lastPaintedFrameRef.current = paintFrame;
+
+      ctx.clearRect(0, 0, vw, vh);
+
+      if (row?.mask_rle) {
+        const mh = Math.round(row.mask_rle.size[0]);
+        const mw = Math.round(row.mask_rle.size[1]);
+        const mask = decodeMaskRle(row.mask_rle);
+        if (mask.length === mw * mh) {
+          drawMaskOnCanvasScaled(ctx, mask, mw, mh, vw, vh);
+        }
+      }
+
+      if (shuttle) {
+        drawShuttleHighlight(ctx, shuttle.cx, shuttle.cy);
+      }
+
+      const statusParts: string[] = [];
+      if (row?.mask_rle) {
+        const src = row.segment_source ?? "sam";
+        statusParts.push(`mask frame ${row.frame} (${src})`);
+      }
+      if (shuttle) {
+        statusParts.push(`shuttle frame ${shuttle.frame}`);
+      }
+      const statusMessage =
+        `Video overlay at ${video.currentTime.toFixed(1)}s: ${statusParts.join(", ")}` +
+        (playerLabel ? ` — ${playerLabel}` : "");
+      maybeAnnounce(statusMessage, paintFrame);
     },
     [
       announceMaskStatus,
       maskRows,
       showMask,
+      showLiveShuttle,
+      shuttleSamples,
       videoFps,
       hasMasks,
-      jerseyNumber,
+      hasOverlay,
+      playerLabel,
       maskFrameOffset,
     ],
   );
@@ -231,14 +276,14 @@ export function VideoUploadPanel({
         rafRef.current = null;
       }
     };
-  }, [schedulePaint, previewUrl, hasMasks]);
+  }, [schedulePaint, playbackUrl, hasOverlay]);
 
   useEffect(() => {
     lastPaintedFrameRef.current = null;
     lastAnnouncedFrameRef.current = null;
     lastAnnouncedStatusRef.current = "";
     schedulePaint({ announce: true });
-  }, [schedulePaint, trackingRows, showMask]);
+  }, [schedulePaint, trackingRows, showMask, showShuttle, shuttleSamples]);
 
   const openFilePicker = useCallback(() => {
     inputRef.current?.click();
@@ -328,6 +373,7 @@ export function VideoUploadPanel({
           <figure className={styles.videoFigure}>
             <div className={styles.videoWrap}>
               <video
+                key={playbackUrl}
                 ref={videoRef}
                 className={styles.preview}
                 src={playbackUrl}
@@ -336,12 +382,13 @@ export function VideoUploadPanel({
                   hasMasks ? "video-mask-status video-filename" : "video-filename"
                 }
               />
-              {hasMasks && showMask && (
+              {hasOverlay && (
                 <canvas
                   ref={canvasRef}
                   className={styles.maskCanvas}
-                  role="img"
-                  aria-labelledby="video-mask-status"
+                  role={maskStatus ? "img" : undefined}
+                  aria-hidden={!maskStatus}
+                  aria-labelledby={maskStatus ? "video-mask-status" : undefined}
                 />
               )}
             </div>
@@ -356,8 +403,8 @@ export function VideoUploadPanel({
           )}
           {showingAnnotated && (
             <p className={styles.maskHint} role="status">
-              Track ellipses and ball marker are baked into this clip.
-              {hasMasks
+              Track ellipses and shuttle marker are baked into this clip.
+              {hasMasks && showMask
                 ? " Player mask overlay still draws on top while you scrub."
                 : ""}
             </p>
@@ -385,7 +432,7 @@ export function VideoUploadPanel({
           {maskUnavailable && (
             <p className={styles.maskHint} role="status" aria-live="polite">
               {masksUnavailableReason ??
-                "Player mask overlay unavailable for this run — check jersey lock and re-run Analyze."}
+                "Player mask overlay unavailable for this run — check player lock and re-run Analyze."}
             </p>
           )}
           {hasMasks && (
@@ -396,6 +443,16 @@ export function VideoUploadPanel({
                 onChange={(e) => setShowMask(e.target.checked)}
               />
               Show player mask
+            </label>
+          )}
+          {hasShuttleSamples && !showingAnnotated && (
+            <label className={styles.maskToggle}>
+              <input
+                type="checkbox"
+                checked={showShuttle}
+                onChange={(e) => setShowShuttle(e.target.checked)}
+              />
+              Show shuttle highlight
             </label>
           )}
           <button

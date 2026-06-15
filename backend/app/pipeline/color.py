@@ -16,7 +16,9 @@ def _default_tolerance() -> int:
 
 
 def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
-    h = hex_color.lstrip("#")
+    h = hex_color.lstrip("#").strip()
+    if not h:
+        raise ValueError("empty hex color")
     if len(h) == 3:
         h = "".join(c * 2 for c in h)
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
@@ -57,5 +59,7 @@ def jersey_color_score(
     if crop.size == 0:
         return 0.0
     primary_score = hex_pixel_match_score(crop, primary_hex, tolerance)
+    if not secondary_hex or not secondary_hex.strip():
+        return primary_score
     secondary_score = hex_pixel_match_score(crop, secondary_hex, tolerance)
     return max(primary_score, secondary_score)

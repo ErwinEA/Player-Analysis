@@ -255,22 +255,17 @@ class JerseyNumberClassifier:
         num: int | None,
         conf: float,
     ) -> tuple[int | None, float]:
-        """Classifier signal for lock votes (target prob + argmax)."""
+        """Classifier vote for lock — only when argmax matches the target jersey."""
         if self.model is None or raw_crop.size == 0:
             return None, 0.0
-        vote_num, vote_conf = num, conf
+        if num is None or conf < _CLASSIFIER_MIN_CONF:
+            return None, 0.0
+        if target_number is not None and num != target_number:
+            return None, 0.0
         if target_number is not None:
             target_prob = self._target_probability(raw_crop, target_number)
-            target_threshold = max(
-                _TARGET_MIN_CONF, _NUMBER_MIN_CONF, _CLASSIFIER_MIN_CONF
-            )
-            if target_prob >= target_threshold and (
-                num is None or num == target_number or target_prob > conf
-            ):
-                return target_number, target_prob
-        if vote_num is not None and vote_conf >= _CLASSIFIER_MIN_CONF:
-            return vote_num, vote_conf
-        return None, 0.0
+            return num, max(conf, target_prob)
+        return num, conf
 
     def _pick_display_reading(
         self,

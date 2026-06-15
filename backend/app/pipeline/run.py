@@ -1298,11 +1298,7 @@ def run_pipeline(
                         track_id=tr["track_id"],
                         bbox=tr["bbox"],
                         confidence=tr.get("score", 1.0),
-                        label=(
-                            str(details.jerseyNumber)
-                            if locked_id == tr["track_id"] and details.jerseyNumber > 0
-                            else None
-                        ),
+                        label=str(tr["track_id"]),
                     )
                     for tr in tracks
                 ]

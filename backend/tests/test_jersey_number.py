@@ -59,6 +59,26 @@ def test_get_jersey_classifier_singleton():
     jn._classifier_instance = None
 
 
+def test_classifier_vote_reading_requires_argmax_target_match():
+    clf = JerseyNumberClassifier.__new__(JerseyNumberClassifier)
+    clf.model = MagicMock()
+    clf.class_names = ["unknown"] + [str(n) for n in range(1, 100)]
+    crop = np.zeros((40, 30, 3), dtype=np.uint8)
+
+    with patch.object(clf, "_target_probability", return_value=0.95):
+        vote_num, vote_conf = clf._classifier_vote_reading(
+            crop, target_number=23, num=14, conf=0.9
+        )
+        assert vote_num is None
+        assert vote_conf == 0.0
+
+        vote_num, vote_conf = clf._classifier_vote_reading(
+            crop, target_number=23, num=23, conf=0.7
+        )
+        assert vote_num == 23
+        assert vote_conf == 0.95
+
+
 def test_read_number_detailed_target_requires_agreement():
     clf = JerseyNumberClassifier.__new__(JerseyNumberClassifier)
     clf.model = MagicMock()

@@ -179,7 +179,6 @@ def run_events(
             ev.lock_confidence,
             ev.detection_phase or "-",
         )
-    # #region agent log
     _log_event_summary(
         timeline=timeline,
         possession=possession,
@@ -187,7 +186,6 @@ def run_events(
         counts=counts,
         ball_samples=ball_samples,
     )
-    # #endregion
     if debug_frames is not None:
         emitted_by_frame = emitted_by_frame or {}
         for d in debug_frames:

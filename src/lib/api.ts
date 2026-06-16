@@ -1,6 +1,6 @@
-import type { PlayerDetails } from "@/components/Sidebar";
 import type { AnalyzeResponse } from "@/types/analysis";
 import type { InsightsRequest, InsightsResponse } from "@/types/insights";
+import type { PlayerDetails } from "@/types/player";
 
 export type PitchFrameResponse = {
   name: string;

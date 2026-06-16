@@ -21,9 +21,10 @@ import {
   type GameplayAnalysis,
   type PlayerMetrics,
 } from "@/types/playerMetrics";
+import type { PlayerDetails } from "@/types/player";
 import type { Sport } from "@/types/sport";
 import styles from "./Dashboard.module.css";
-import { Sidebar, type PlayerDetails } from "./Sidebar";
+import { Sidebar } from "./Sidebar";
 import { SportToggle } from "./SportToggle";
 import { UploadAnalyzePanel } from "./UploadAnalyzePanel";
 import { HeatMapPanel } from "./HeatMapPanel";

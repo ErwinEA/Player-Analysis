@@ -134,6 +134,7 @@ export type AnalyzeResponse = {
   badminton_stats?: BadmintonStats | null;
   badminton_stats_unavailable_reason?: string | null;
   shuttle_samples?: ShuttleSample[];
+  warnings?: string[];
   video_url?: string | null;
   video_unavailable_reason?: string | null;
 };

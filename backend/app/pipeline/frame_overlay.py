@@ -208,6 +208,7 @@ def draw_overlay_badminton(
             draw_label_top_center(out, tr.bbox, label, color=locked_color)
             if rally_state == "END":
                 draw_rally_end_flash(out, tr.bbox)
+                draw_label_top_center(out, tr.bbox, "Rally ended", color=WHITE)
 
     if shuttle_px is not None:
         draw_shuttle_dot(out, shuttle_px[0], shuttle_px[1])

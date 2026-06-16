@@ -202,6 +202,25 @@ def test_mask_grid_to_court_half_zeros_opponent_columns():
     assert masked[:, mid_col + 1 :].sum() == 0.0
 
 
+def test_disambiguate_single_player_on_court_side():
+    net_y = 360.0
+    tracks = [{"track_id": 5, "bbox": [100.0, 400.0, 200.0, 500.0]}]
+    color_scores = {5: [0.8, 0.85, 0.9, 0.88, 0.87]}
+    tid, method = disambiguate_with_fallback(
+        tracks, "near", net_y, color_scores, min_tracks=2
+    )
+    assert tid == 5
+    assert method == "court_side_single"
+
+
+def test_net_line_y_override():
+    from dataclasses import replace
+
+    cal = _cal()
+    overridden = replace(cal, net_line_y_override=400.0)
+    assert net_line_y_px(overridden) == 400.0
+
+
 def test_color_fallback_rejects_weak_scores():
     net_y = 360.0
     tracks = [

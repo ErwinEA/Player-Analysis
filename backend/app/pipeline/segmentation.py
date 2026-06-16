@@ -43,6 +43,13 @@ def sam_enabled() -> bool:
     )
 
 
+def sam_enabled_for_sport(*, is_badminton: bool = False) -> bool:
+    """Badminton defaults SAM off; football defaults on. Override with SAM_ENABLED."""
+    default = "0" if is_badminton else "1"
+    raw = os.environ.get("SAM_ENABLED", default).strip().lower()
+    return raw not in ("0", "false", "no")
+
+
 def sam_warmup_frames() -> int:
     return max(1, int(os.environ.get("SAM_WARMUP_FRAMES", "1")))
 
@@ -638,6 +645,7 @@ def _resolve_by_kit_color(
     secondary_hex: str,
     lock_track_id: int,
     frame_shape: tuple[int, ...],
+    use_hsv: bool = False,
 ) -> tuple[int, list[float], bool] | None:
     from backend.app.pipeline.color import jersey_color_score
 
@@ -648,7 +656,9 @@ def _resolve_by_kit_color(
         bbox = list(tr["bbox"])
         if not is_valid_person_bbox(bbox, frame_shape):
             continue
-        score = jersey_color_score(frame, bbox, primary_hex, secondary_hex)
+        score = jersey_color_score(
+            frame, bbox, primary_hex, secondary_hex, use_hsv=use_hsv
+        )
         if score >= min_score:
             hits.append((score, tid, bbox))
     if not hits:
@@ -656,6 +666,71 @@ def _resolve_by_kit_color(
     hits.sort(key=lambda x: (-x[0], 0 if x[1] == lock_track_id else 1))
     _score, best_id, best_bbox = hits[0]
     return best_id, best_bbox, best_id != lock_track_id
+
+
+def _resolve_by_court_side(
+    tracks: list[dict],
+    *,
+    court_side: str,
+    net_y_px: float,
+    image_height: int,
+    lock_track_id: int,
+    frame_shape: tuple[int, ...],
+    calibration: PitchCalibration | None,
+) -> tuple[int, list[float], bool] | None:
+    from backend.app.pipeline.sports.badminton_utils import row_on_court_side
+
+    class _RowProxy:
+        def __init__(self, bbox: list[float]) -> None:
+            self.bbox = bbox
+            self.foot_y = (
+                (bbox[1] + bbox[3]) / 2.0 / image_height if image_height > 0 else None
+            )
+
+    candidates: list[tuple[int, list[float]]] = []
+    for tr in tracks:
+        tid = int(tr["track_id"])
+        bbox = list(tr["bbox"])
+        if not is_valid_reid_candidate_bbox(bbox, frame_shape, calibration=calibration):
+            continue
+        if row_on_court_side(
+            _RowProxy(bbox), court_side, net_y_px, image_height=image_height
+        ):
+            candidates.append((tid, bbox))
+    if not candidates:
+        return None
+    for tid, bbox in candidates:
+        if tid == lock_track_id:
+            return tid, bbox, False
+    if len(candidates) == 1:
+        tid, bbox = candidates[0]
+        return tid, bbox, tid != lock_track_id
+    return None
+
+
+def _resolve_by_last_bbox(
+    tracks: list[dict],
+    *,
+    last_bbox: list[float],
+    frame_width: int,
+    frame_height: int,
+    lock_track_id: int,
+    frame_shape: tuple[int, ...],
+    calibration: PitchCalibration | None,
+) -> tuple[int, list[float], bool] | None:
+    best: tuple[float, int, list[float]] | None = None
+    for tr in tracks:
+        tid = int(tr["track_id"])
+        bbox = list(tr["bbox"])
+        if not is_valid_reid_candidate_bbox(bbox, frame_shape, calibration=calibration):
+            continue
+        dist = _center_dist_norm(bbox, last_bbox, frame_width, frame_height)
+        if best is None or dist < best[0]:
+            best = (dist, tid, bbox)
+    if best is None or best[0] > reid_fallback_max_center_frac():
+        return None
+    _dist, tid, bbox = best
+    return tid, bbox, tid != lock_track_id
 
 
 def resolve_target_bbox(
@@ -673,11 +748,16 @@ def resolve_target_bbox(
     ocr: object | None = None,
     kit_primary: str | None = None,
     kit_secondary: str | None = None,
+    is_badminton: bool = False,
+    court_side: str | None = None,
+    net_y_px: float | None = None,
 ) -> tuple[int, list[float], bool] | None:
     """Return (track_id, bbox, is_reid_fallback) for locked or ReID fallback track."""
     frame_shape = frame.shape[:2]
+    image_height = frame_height or frame_shape[0]
     if (
-        seg_jersey_ocr_priority()
+        not is_badminton
+        and seg_jersey_ocr_priority()
         and target_jersey is not None
         and target_jersey > 0
         and ocr is not None
@@ -694,29 +774,58 @@ def resolve_target_bbox(
         if jersey_pick is not None:
             return jersey_pick
 
-    if (
-        seg_color_fallback()
-        and kit_primary
-        and kit_secondary
-    ):
-        color_pick = _resolve_by_kit_color(
-            tracks,
-            frame,
-            primary_hex=kit_primary,
-            secondary_hex=kit_secondary,
-            lock_track_id=lock_track_id,
-            frame_shape=frame_shape,
-        )
-        if color_pick is not None:
-            return color_pick
-
     by_id = {int(t["track_id"]): t for t in tracks}
     if lock_track_id in by_id:
         bbox = list(by_id[lock_track_id]["bbox"])
         if is_valid_reid_candidate_bbox(bbox, frame_shape, calibration=calibration):
             return lock_track_id, bbox, False
-        # Locked track resolved onto an implausible region (graphic/off-pitch);
-        # fall through to ReID rather than trust a bad box.
+
+    if (
+        is_badminton
+        and court_side in ("near", "far")
+        and net_y_px is not None
+    ):
+        side_pick = _resolve_by_court_side(
+            tracks,
+            court_side=court_side,
+            net_y_px=net_y_px,
+            image_height=image_height,
+            lock_track_id=lock_track_id,
+            frame_shape=frame_shape,
+            calibration=calibration,
+        )
+        if side_pick is not None:
+            return side_pick
+
+    if seg_color_fallback() and kit_primary:
+        color_pick = _resolve_by_kit_color(
+            tracks,
+            frame,
+            primary_hex=kit_primary,
+            secondary_hex=kit_secondary or "",
+            lock_track_id=lock_track_id,
+            frame_shape=frame_shape,
+            use_hsv=is_badminton,
+        )
+        if color_pick is not None:
+            return color_pick
+
+    if (
+        last_bbox is not None
+        and frame_width > 0
+        and frame_height > 0
+    ):
+        last_pick = _resolve_by_last_bbox(
+            tracks,
+            last_bbox=last_bbox,
+            frame_width=frame_width,
+            frame_height=frame_height,
+            lock_track_id=lock_track_id,
+            frame_shape=frame_shape,
+            calibration=calibration,
+        )
+        if last_pick is not None:
+            return last_pick
 
     if reid_prototype is None or reid_extractor is None:
         return None

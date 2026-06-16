@@ -24,6 +24,9 @@ export function badmintonMetricsFromResult(
 export function badmintonMetricsWarning(
   result: AnalyzeResponse,
 ): string | null {
+  if (result.warnings?.length) {
+    return result.warnings[0];
+  }
   if (result.calibration_skipped_reason === "court_dimension_mismatch") {
     return "Saved court calibration uses football dimensions (105 m × 68 m). Click Calibrate court layout, save corners for this video in Badminton mode (13.4 m × 6.1 m), then re-run Analyze.";
   }
@@ -37,8 +40,14 @@ export function badmintonMetricsWarning(
   if (reason === "no_shuttle_weights") {
     return "Rally stats need shuttle detection weights: add yolov8m_shuttlecock.pt to backend/weights (see backend/weights/README.md).";
   }
+  if (reason === "rallies_replay_filtered") {
+    return "Rallies were detected but excluded as likely replay/highlight footage — try a continuous match clip.";
+  }
   if (reason === "rally_detection_pending") {
-    return "No rallies detected in this clip — match rally metrics are unavailable.";
+    return "No rallies detected — check shuttle visibility, calibration, and clip type (highlights often fail).";
+  }
+  if (result.target.method === "court_side_single") {
+    return "Player lock used court side with only one visible player (lower confidence). Treat heat map as approximate.";
   }
   if (result.calibration_skipped_reason === "positions_out_of_bounds") {
     return "Court calibration is off: player positions fall outside the court. Recalibrate, then re-run Analyze.";

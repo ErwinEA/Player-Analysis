@@ -80,6 +80,7 @@ class PitchCalibration:
     mode: str = "outline"
     confidence: float | None = None
     coverage_pct: float | None = None
+    net_line_y_override: float | None = None
 
     @property
     def H(self) -> np.ndarray:
@@ -122,6 +123,7 @@ class PitchCalibration:
             "mode": self.mode,
             "confidence": self.confidence,
             "coverage_pct": self.coverage_pct,
+            "net_line_y_override": self.net_line_y_override,
         }
 
     @classmethod
@@ -171,6 +173,11 @@ class PitchCalibration:
             coverage_pct=(
                 float(data["coverage_pct"])
                 if data.get("coverage_pct") is not None
+                else None
+            ),
+            net_line_y_override=(
+                float(data["net_line_y_override"])
+                if data.get("net_line_y_override") is not None
                 else None
             ),
         )

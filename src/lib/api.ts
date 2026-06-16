@@ -165,6 +165,7 @@ export type PitchCalibrationPayload = {
   image_height?: number;
   pitch_length_m?: number;
   pitch_width_m?: number;
+  net_line_y_override?: number;
 };
 
 export async function previewPitchCalibration(

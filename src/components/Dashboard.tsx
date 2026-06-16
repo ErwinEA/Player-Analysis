@@ -30,6 +30,7 @@ import { HeatMapPanel } from "./HeatMapPanel";
 import { PlayerMetricsPanel } from "./PlayerMetricsPanel";
 import { GameplayAnalysisPanel } from "./GameplayAnalysisPanel";
 import { PitchCalibrationModal } from "./PitchCalibrationModal";
+import { ANALYZE_FRAME_CAP } from "@/lib/analyzeConfig";
 import { calibrationKeyFromFilename } from "@/lib/videoFrame";
 import { AnalyzeIcon, LogoIcon } from "./icons";
 
@@ -546,7 +547,7 @@ export function Dashboard() {
               heatmap={result?.heatmap}
               heatmapSource={result?.heatmap_source}
               calibrationSkippedReason={result?.calibration_skipped_reason}
-              frameCap={result?.video.frame_cap ?? 6000}
+              frameCap={result?.video.frame_cap ?? ANALYZE_FRAME_CAP}
               calibrationName={
                 result?.calibration_name ?? videoCalibrationKey
               }
@@ -556,6 +557,10 @@ export function Dashboard() {
               sport={sport}
               metrics={metrics}
               badmintonMetrics={badmintonMetrics}
+              zoneSummary={result?.heatmap?.zone_summary}
+              badmintonStatsUnavailableReason={
+                result?.badminton_stats_unavailable_reason
+              }
               isLoading={isLoading}
               hasResult={hasResult}
               metricsWarning={metricsWarning}

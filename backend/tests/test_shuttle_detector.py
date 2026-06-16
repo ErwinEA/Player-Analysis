@@ -127,6 +127,34 @@ def test_shuttle_kalman_predict_before_update_returns_none():
     assert k.predict() is None
 
 
+def test_shuttle_filter_rejects_off_court():
+    from backend.app.pipeline.badminton.shuttle_detector import ShuttleDetection
+    from backend.app.pipeline.badminton.shuttle_filter import ShuttleDetectionFilter
+    from backend.app.pipeline.pitch_homography import build_calibration
+
+    cal = build_calibration(
+        "t",
+        image_corners=[[100, 100], [1180, 100], [1180, 620], [100, 620]],
+        image_size=(1280, 720),
+        length_m=13.4,
+        width_m=6.1,
+    )
+    filt = ShuttleDetectionFilter(calibration=cal, max_speed_px=9999.0)
+    det = ShuttleDetection(cx_px=5.0, cy_px=5.0, conf=0.9)
+    assert filt.accept(det, 1, fps=30.0) is False
+
+
+def test_shuttle_filter_rejects_impossible_jump():
+    from backend.app.pipeline.badminton.shuttle_detector import ShuttleDetection
+    from backend.app.pipeline.badminton.shuttle_filter import ShuttleDetectionFilter
+
+    filt = ShuttleDetectionFilter(max_speed_px=10.0)
+    d1 = ShuttleDetection(cx_px=100.0, cy_px=100.0, conf=0.9)
+    d2 = ShuttleDetection(cx_px=500.0, cy_px=100.0, conf=0.9)
+    assert filt.accept(d1, 1, fps=30.0) is True
+    assert filt.accept(d2, 2, fps=30.0) is False
+
+
 def test_health_endpoint_includes_shuttle():
     from fastapi.testclient import TestClient
 

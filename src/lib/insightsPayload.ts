@@ -63,10 +63,21 @@ function collectFootballWarnings(result: AnalyzeResponse): string[] {
   return warnings;
 }
 
+const BADMINTON_HEURISTIC_CAVEAT =
+  "Rally and point stats are heuristic estimates — not official scoring. Rally count may include replays; there is no line-call detection.";
+
 function collectBadmintonWarnings(result: AnalyzeResponse): string[] {
   const warnings: string[] = [];
+  if (result.warnings?.length) {
+    warnings.push(...result.warnings);
+  }
   const metricWarn = badmintonMetricsWarning(result);
-  if (metricWarn) warnings.push(metricWarn);
+  if (metricWarn && !warnings.includes(metricWarn)) {
+    warnings.push(metricWarn);
+  }
+  if (result.badminton_stats?.total_rallies != null) {
+    warnings.push(BADMINTON_HEURISTIC_CAVEAT);
+  }
   return warnings;
 }
 

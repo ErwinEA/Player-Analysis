@@ -11,7 +11,7 @@ Example (repo root, venv active):
     backend/data/pitch_calibration/testmatch2.mp4 \\
     backend/data/lozano-details.json \\
     -o backend/data/outputs/seg_overlay_lozano.mp4 \\
-    --max-frames 1500
+    --max-frames 12000
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ if str(_REPO) not in sys.path:
 from backend.app.pipeline.detector import PersonDetector
 from backend.app.pipeline.ocr import JerseyOCR
 from backend.app.pipeline.reid import get_reid_extractor
-from backend.app.pipeline.run import _kit_colors
+from backend.app.pipeline.run import DEFAULT_MAX_FRAMES, _kit_colors
 from backend.app.pipeline.segmentation import (
     get_mobile_sam_segmenter,
     prepare_mobile_sam_for_run,
@@ -52,7 +52,7 @@ def main() -> int:
     parser.add_argument("video", type=Path)
     parser.add_argument("details", type=Path)
     parser.add_argument("-o", "--output", type=Path, required=True)
-    parser.add_argument("--max-frames", type=int, default=1500)
+    parser.add_argument("--max-frames", type=int, default=DEFAULT_MAX_FRAMES)
     parser.add_argument("--frame-start", type=int, default=0)
     parser.add_argument(
         "--ocr-every",

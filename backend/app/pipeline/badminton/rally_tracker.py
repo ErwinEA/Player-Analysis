@@ -94,6 +94,9 @@ class RallyTracker:
     post_land_cooldown_frames: int = field(
         default_factory=lambda: _env_int("SHUTTLE_POST_LAND_COOLDOWN_FRAMES", 6)
     )
+    merge_ms: float = field(
+        default_factory=lambda: _env_float("SHUTTLE_RALLY_MERGE_MS", 1500.0)
+    )
     touch_radius_px: float = field(
         default_factory=lambda: _env_float("SHUTTLE_TOUCH_RADIUS_PX", 120.0)
     )
@@ -117,6 +120,7 @@ class RallyTracker:
     _post_land_cooldown: int = 0
     _last_locked_touch_frame: int | None = None
     _serving_side: WinnerSide = "near"
+    _last_end_frame: int | None = None
 
     def update(
         self,
@@ -167,13 +171,25 @@ class RallyTracker:
                 and self._seen_streak >= self.live_frames
                 and self._idle_motion_seen
             ):
-                self.state = "LIVE"
-                self._rally_start_frame = frame_idx - self.live_frames + 1
-                # Serve/hit motion that opened the rally counts as initial flight.
-                self._flight_frames = (
-                    self.min_flight_frames if self._idle_motion_seen else 0
-                )
-                self._land_stable_streak = 0
+                merge_frames = max(0, int(self.merge_ms / 1000.0 * self.fps))
+                if (
+                    self.events
+                    and self._last_end_frame is not None
+                    and frame_idx - self._last_end_frame <= merge_frames
+                ):
+                    last = self.events.pop()
+                    self._rally_start_frame = last.start_frame
+                    self._serving_side = last.serving_side
+                    self.state = "LIVE"
+                    self._flight_frames = self.min_flight_frames
+                    self._land_stable_streak = 0
+                else:
+                    self.state = "LIVE"
+                    self._rally_start_frame = frame_idx - self.live_frames + 1
+                    self._flight_frames = (
+                        self.min_flight_frames if self._idle_motion_seen else 0
+                    )
+                    self._land_stable_streak = 0
         elif self.state == "LIVE":
             landed = (
                 self._flight_frames >= self.min_flight_frames
@@ -243,6 +259,7 @@ class RallyTracker:
                 locked_player_touched_last=touched_last,
             )
         )
+        self._last_end_frame = end_frame
         self._serving_side = "far" if serving == "near" else "near"
         self._rally_start_frame = None
         self._last_locked_touch_frame = None

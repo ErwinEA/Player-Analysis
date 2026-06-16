@@ -60,10 +60,6 @@ test.describe("Player Analysis dashboard", () => {
       page.getByText("Avg rally duration", { exact: true }),
     ).toBeVisible();
     await expect(page.getByText("Longest rally", { exact: true })).toBeVisible();
-    await expect(
-      page.getByText("Points on serve vs return", { exact: true }),
-    ).toBeVisible();
-    await expect(page.getByText("In / out calls", { exact: true })).toBeVisible();
     await expect(page.getByText("Goals")).toHaveCount(0);
   });
 

@@ -4,8 +4,12 @@ import os
 import re
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from backend.app.pipeline.lock_audit import LockAudit
 
 
 def _color_lock_threshold() -> float:
@@ -129,9 +133,16 @@ class TargetLock:
 class TrackIdentityMatcher:
     """Three-stage identifier with permanent track lock once a player is identified."""
 
-    def __init__(self, target_jersey: int, target_name: str) -> None:
+    def __init__(
+        self,
+        target_jersey: int,
+        target_name: str,
+        *,
+        audit: LockAudit | None = None,
+    ) -> None:
         self.target_jersey = target_jersey
         self.target_name = _name_letters(target_name)
+        self._audit = audit
 
         self.number_votes: dict[int, float] = defaultdict(float)
         self.name_votes: dict[int, float] = defaultdict(float)
@@ -150,7 +161,11 @@ class TrackIdentityMatcher:
         return self.lock is not None
 
     def apply_court_side_lock(
-        self, track_id: int, confidence: float = 1.0
+        self,
+        track_id: int,
+        confidence: float = 1.0,
+        *,
+        frame_idx: int | None = None,
     ) -> TargetLock:
         """Lock target by court-side disambiguation (badminton)."""
         lock = TargetLock(
@@ -159,10 +174,31 @@ class TrackIdentityMatcher:
             method="court_side",
             confidence=round(confidence, 3),
         )
-        self.lock = lock
-        return lock
+        return self._apply_lock(lock, frame_idx=frame_idx)
 
-    def apply_color_lock(self, track_id: int, confidence: float = 0.0) -> TargetLock:
+    def apply_court_side_single_lock(
+        self,
+        track_id: int,
+        confidence: float = 0.65,
+        *,
+        frame_idx: int | None = None,
+    ) -> TargetLock:
+        """Lock with one visible player on the chosen court side (lower confidence)."""
+        lock = TargetLock(
+            track_id=track_id,
+            jersey=self.target_jersey,
+            method="court_side_single",
+            confidence=round(confidence, 3),
+        )
+        return self._apply_lock(lock, frame_idx=frame_idx)
+
+    def apply_color_lock(
+        self,
+        track_id: int,
+        confidence: float = 0.0,
+        *,
+        frame_idx: int | None = None,
+    ) -> TargetLock:
         """Lock target by shirt-color fallback (badminton)."""
         lock = TargetLock(
             track_id=track_id,
@@ -170,16 +206,33 @@ class TrackIdentityMatcher:
             method="color",
             confidence=round(confidence, 3),
         )
-        self.lock = lock
-        return lock
+        return self._apply_lock(lock, frame_idx=frame_idx)
 
-    def release_lock(self) -> None:
+    def apply_memory_lock(
+        self,
+        track_id: int,
+        confidence: float = 0.65,
+        *,
+        frame_idx: int | None = None,
+    ) -> TargetLock:
+        """Lock from persistent TargetMemory fingerprint (one jersey read + ReID)."""
+        lock = TargetLock(
+            track_id=track_id,
+            jersey=self.target_jersey,
+            method="memory",
+            confidence=round(confidence, 3),
+        )
+        return self._apply_lock(lock, frame_idx=frame_idx)
+
+    def release_lock(self, *, frame_idx: int | None = None, reason: str = "manual_clear") -> None:
         """Drop the current lock so the target can be re-acquired on a new shot.
 
         Keeps the ReID prototype and vote history by default for fast re-lock; set
         SCENE_CUT_CLEAR_VOTES=1 to also clear accumulated evidence when stale votes
         cause repeated wrong re-locks across cuts.
         """
+        if self.lock is not None and self._audit is not None and frame_idx is not None:
+            self._audit.log_lock_reset(frame_idx=frame_idx, reason=reason)
         self.lock = None
         if os.environ.get("SCENE_CUT_CLEAR_VOTES", "0").strip().lower() in (
             "1",
@@ -402,14 +455,88 @@ class TrackIdentityMatcher:
             lock = self._try_lock_color()
         return lock
 
-    def try_acquire_lock(self) -> TargetLock | None:
+    def diagnose_lock_blockers(self) -> list[str]:
+        """Why try_acquire_lock would return None (for lock audit)."""
+        reasons: list[str] = []
+        consec = _lock_consecutive_frames()
+        vote_thresh = _number_lock_votes()
+        num_min = _number_min_conf()
+
+        has_target_votes = any(
+            tid in self.has_number_match and self.has_number_match[tid]
+            for tid in self.number_votes
+        )
+        if not has_target_votes:
+            reasons.append("no_target_jersey_votes")
+            return reasons
+
+        for track_id, num_score in self.number_votes.items():
+            if not self.has_number_match.get(track_id):
+                continue
+            streak = self._number_streak.get(track_id, 0)
+            if streak < consec:
+                reasons.append(
+                    f"track_{track_id}_streak_{streak}_needs_{consec}"
+                )
+            if num_score < vote_thresh:
+                reasons.append(
+                    f"track_{track_id}_votes_{num_score:.2f}_needs_{vote_thresh}"
+                )
+
+        if self.reid_prototype is None:
+            reasons.append("no_reid_prototype")
+        else:
+            reid_thresh = _reid_lock_threshold()
+            min_samples = _reid_min_samples()
+            for track_id, embs in self.reid_embeddings.items():
+                if not self.has_number_match.get(track_id):
+                    continue
+                if len(embs) < min_samples:
+                    reasons.append(
+                        f"track_{track_id}_reid_samples_{len(embs)}_needs_{min_samples}"
+                    )
+
+        if not self.color_scores:
+            reasons.append("no_color_scores")
+        elif not reasons:
+            reasons.append("color_below_threshold")
+        return reasons or ["insufficient_evidence"]
+
+    def _audit_lock_created(self, lock: TargetLock, frame_idx: int | None) -> None:
+        if self._audit is None or frame_idx is None:
+            return
+        self._audit.log_lock_created(
+            frame_idx=frame_idx,
+            track_id=lock.track_id,
+            method=lock.method,
+            confidence=lock.confidence,
+        )
+
+    def _apply_lock(
+        self, lock: TargetLock, *, frame_idx: int | None = None
+    ) -> TargetLock:
+        self.lock = lock
+        self._audit_lock_created(lock, frame_idx)
+        return lock
+
+    def try_acquire_lock(self, frame_idx: int | None = None) -> TargetLock | None:
         """Acquire permanent lock: number+name → number → ReID → color."""
         if self.lock is not None:
             return self.lock
         lock = self._strongest_available_lock()
         if lock is not None:
-            self.lock = lock
-        return self.lock
+            return self._apply_lock(lock, frame_idx=frame_idx)
+        if self._audit is not None and frame_idx is not None:
+            blockers = self.diagnose_lock_blockers()
+            best_tid: int | None = None
+            if self.number_votes:
+                best_tid = max(self.number_votes, key=self.number_votes.get)  # type: ignore[arg-type]
+            self._audit.log_lock_failed(
+                frame_idx=frame_idx,
+                track_id=best_tid,
+                reason=";".join(blockers[:3]),
+            )
+        return None
 
     def maybe_upgrade_lock(self, track_id: int) -> TargetLock | None:
         """Promote a weak color lock when stronger evidence arrives on the same track."""

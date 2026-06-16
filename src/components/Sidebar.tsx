@@ -367,7 +367,7 @@ export function Sidebar({
           <p className={styles.tipTitle}>Pro Tip</p>
           <p className={styles.tipText}>
             {sport === "badminton"
-              ? "Use a fixed wide-angle view of the full court (17 m × 8.5 m). Calibrate court lines before analyzing for metre-based movement stats."
+              ? "Use a fixed wide-angle view of the full singles court (13.4 m × 6.1 m). Calibrate court lines before analyzing for metre-based movement stats."
               : "For best results, use video with clear jersey numbers and consistent lighting. 1080p or higher recommended."}
           </p>
         </div>

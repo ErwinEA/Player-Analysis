@@ -37,7 +37,7 @@ On first run, Ultralytics downloads `yolov8n.pt` automatically (unless you set `
 | `TRACK_LOW_THRESH` | `0.1` | ByteTrack second-stage threshold; warn if `DET_CONF` is higher |
 | `TRACK_MIN_AGE` | `3` | Frames before a track is analyzed for OCR / included in output |
 | `OCR_EVERY` | `5` | Run OCR every N frames (OCR is slow) |
-| `MAX_FRAMES` | `6000` | Cap frames through detection/tracking (max 6000; invalid/`0` → 6000) |
+| `MAX_FRAMES` | `12000` | Cap frames through detection/tracking (max 12000; invalid/`0` → 12000) |
 | `MAX_UPLOAD_MB` | `4096` | Max legacy video upload size in megabytes (4 GB) |
 | `CORS_ALLOW_LOCAL_REGEX` | `1` | Allow localhost/127.0.0.1 on any port (set `0` in production) |
 | `OCR_GPU` | `0` | Set to `1` to run EasyOCR on a CUDA GPU |
@@ -61,7 +61,11 @@ On first run, Ultralytics downloads `yolov8n.pt` automatically (unless you set `
 | `JERSEY_CLS_DEVICE` | `auto` | `cuda`, `mps`, `cpu`, or `auto` for classifier inference |
 | `INFERENCE_DEVICE` | `auto` | `mps`, `cuda`, `cpu`, or `auto` for YOLO + ReID (overridden by `YOLO_DEVICE` for detectors) |
 | `YOLO_DEVICE` | unset | Optional override for person/ball YOLO only |
-| `SAM_ENABLED` | `1` | Per-frame MobileSAM on locked player (`0` = bbox-only) |
+| `SAM_ENABLED` | `1` (football) | Per-frame MobileSAM on locked player (`0` = bbox-only). Badminton skips SAM unless set to `1`. |
+| `SHUTTLE_MAX_SPEED_PX` | `120` | Reject shuttle detections with implausible pixel jumps |
+| `SHUTTLE_COURT_MARGIN_M` | `0.5` | Court-bounds margin (metres) for shuttle gating |
+| `SHUTTLE_RALLY_MERGE_MS` | `1500` | Merge rallies restarted within this gap (fast exchanges) |
+| `YOLO_IMGSZ` | _(model default)_ | Optional YOLO inference size override |
 | `SAM_WEIGHTS` | `backend/weights/mobile_sam.pt` | MobileSAM checkpoint |
 | `SAM_DEVICE` | `auto` | `mps`, `cuda`, `cpu`, or `auto` (no CPU fallback unless `SAM_ALLOW_CPU_FALLBACK=1`) |
 | `SAM_ALLOW_CPU_FALLBACK` | unset | Set `1` to retry MobileSAM on CPU after MPS/CUDA failure |
@@ -161,7 +165,7 @@ Multipart form:
 
 ```json
 {
-  "video": { "fps": 30.0, "width": 1920, "height": 1080, "frames": 1500, "duration_s": 50.0 },
+  "video": { "fps": 30.0, "width": 1920, "height": 1080, "frames": 1500, "duration_s": 50.0, "frame_cap": 12000 },
   "target": {
     "jersey": 10,
     "track_id": 7,
@@ -223,7 +227,7 @@ A sample details file is at [backend/sample-details.json](sample-details.json).
 
 Frontend: set `NEXT_PUBLIC_RENDER_ANALYZE_VIDEO=1` in `.env.local` to request rendering from the dashboard.
 
-`scripts/dev_backend.sh` sets `MAX_FRAMES=6000`; raw `uvicorn` uses the same default unless you export `MAX_FRAMES`.
+`scripts/dev_backend.sh` sets `MAX_FRAMES=12000` by default; override with `MAX_FRAMES=…` for shorter dev runs.
 
 ### Mask overlay video (debug)
 

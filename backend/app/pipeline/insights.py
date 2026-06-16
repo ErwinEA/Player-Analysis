@@ -114,28 +114,19 @@ def _format_zone_summary(
 
 def _format_badminton_stats(stats: BadmintonStats | None) -> list[str]:
     if stats is None or stats.total_rallies is None:
-        return ["Rally / point stats: not available"]
+        return ["Rally stats: not available"]
     lines = [
-        "Rally / point stats:",
-        f"- Total rallies: {stats.total_rallies}",
+        "Rally stats (heuristic — not official scoring):",
+        f"- Total rallies (estimated): {stats.total_rallies}",
     ]
     if stats.avg_rally_duration_s is not None:
-        lines.append(f"- Avg rally duration: {stats.avg_rally_duration_s:.1f} s")
-    if stats.longest_rally_duration_s is not None:
-        lines.append(f"- Longest rally: {stats.longest_rally_duration_s:.1f} s")
-    if stats.total_points_won is not None:
-        serve = stats.points_won_on_serve
-        ret = stats.points_won_on_return
-        serve_s = str(serve) if serve is not None else "?"
-        ret_s = str(ret) if ret is not None else "?"
         lines.append(
-            f"- Points won on serve vs return: {serve_s}/{stats.total_points_won} serve, "
-            f"{ret_s}/{stats.total_points_won} return"
+            f"- Avg rally duration (estimated): {stats.avg_rally_duration_s:.1f} s"
         )
-    if stats.points_in is not None or stats.points_out is not None:
-        pin = stats.points_in if stats.points_in is not None else "?"
-        pout = stats.points_out if stats.points_out is not None else "?"
-        lines.append(f"- In / out calls: {pin} in, {pout} out")
+    if stats.longest_rally_duration_s is not None:
+        lines.append(
+            f"- Longest rally (estimated): {stats.longest_rally_duration_s:.1f} s"
+        )
     return lines
 
 
@@ -226,10 +217,13 @@ def build_prompt(facts: str, *, sport: str = "football") -> list[dict[str, str]]
     if sport == "badminton":
         system = (
             "You are a badminton performance analyst. Use ONLY the facts provided. "
-            "Do not invent statistics, rallies, or points. If rally stats are missing "
-            "or warnings note uncertainty, state that clearly in a caveat. "
-            "Court is 13.4 m long × 6.1 m wide. Length thirds split the long axis "
-            "(0 m and 13.4 m are baselines; net is near 6.7 m) — not necessarily "
+            "Do not invent statistics, rallies, or points. Rally counts and durations "
+            "are heuristic estimates only — not official scoring. There is no line-call "
+            "or serve/return detection; do not describe in/out calls or serve splits. "
+            "Rally counts may include replays in highlight clips. If rally stats are "
+            "missing or warnings note uncertainty, state that clearly in a caveat. "
+            "Court is 13.4 m long × 6.1 m (singles). Length thirds split the long "
+            "axis (0 m and 13.4 m are baselines; net is near 6.7 m) — not necessarily "
             "the player's attacking direction."
         )
         bullets = (

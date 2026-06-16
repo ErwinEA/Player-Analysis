@@ -95,11 +95,17 @@ class ShuttleKalman:
             dtype=np.float64,
         )
         self._H = np.array([[1, 0, 0, 0], [0, 1, 0, 0]], dtype=np.float64)
-        # Higher process noise → filter trusts measurement more (fast shuttle).
-        self._Q = np.diag([2.0, 2.0, 8.0, 8.0]).astype(np.float64)
         self._R = np.diag([4.0, 4.0]).astype(np.float64)
         self._I = np.eye(4, dtype=np.float64)
         self._predict_streak = 0
+
+    def _scaled_Q(self) -> np.ndarray:
+        base = np.diag([2.0, 2.0, 8.0, 8.0]).astype(np.float64)
+        if self._x is None:
+            return base
+        speed = float((self._x[2] ** 2 + self._x[3] ** 2) ** 0.5)
+        scale = min(4.0, 1.0 + speed / 25.0)
+        return base * scale
 
     def reset(self) -> None:
         self._x = None
@@ -115,7 +121,8 @@ class ShuttleKalman:
             self._predict_streak = 0
             return cx, cy
         x_pred = self._F @ self._x
-        P_pred = self._F @ self._P @ self._F.T + self._Q
+        Q = self._scaled_Q()
+        P_pred = self._F @ self._P @ self._F.T + Q
         K = P_pred @ self._H.T @ np.linalg.inv(self._H @ P_pred @ self._H.T + self._R)
         self._x = x_pred + K @ (z - self._H @ x_pred)
         self._P = (self._I - K @ self._H) @ P_pred
@@ -132,7 +139,8 @@ class ShuttleKalman:
             return None
         self._x = self._F @ self._x
         if self._P is not None:
-            self._P = self._F @ self._P @ self._F.T + self._Q
+            Q = self._scaled_Q()
+            self._P = self._F @ self._P @ self._F.T + Q
         return float(self._x[0]), float(self._x[1])
 
 
@@ -164,6 +172,10 @@ class ShuttleDetector:
         self.available = False
         self._model = None
         self._device = resolve_ultralytics_device()
+        raw_imgsz = os.environ.get("YOLO_IMGSZ", "").strip() or os.environ.get(
+            "SHUTTLE_YOLO_IMGSZ", ""
+        ).strip()
+        self.imgsz = int(raw_imgsz) if raw_imgsz.isdigit() and int(raw_imgsz) > 0 else None
 
         if resolved is None:
             logger.warning(
@@ -186,13 +198,15 @@ class ShuttleDetector:
             return None
 
         try:
-            result = self._model.predict(
-                frame_bgr,
-                conf=self.conf,
-                iou=self.iou,
-                device=self._device,
-                verbose=False,
-            )[0]
+            predict_kwargs: dict = {
+                "conf": self.conf,
+                "iou": self.iou,
+                "device": self._device,
+                "verbose": False,
+            }
+            if self.imgsz is not None:
+                predict_kwargs["imgsz"] = self.imgsz
+            result = self._model.predict(frame_bgr, **predict_kwargs)[0]
         except Exception as exc:
             logger.warning("Shuttle detect failed: %s", exc)
             return None

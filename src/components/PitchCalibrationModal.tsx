@@ -78,6 +78,8 @@ export function PitchCalibrationModal({
   const [step, setStep] = useState<"place" | "preview">("place");
   const [previewData, setPreviewData] =
     useState<PitchCalibrationPreviewResponse | null>(null);
+  const [netLineY, setNetLineY] = useState<number | null>(null);
+  const [netLineAdjusted, setNetLineAdjusted] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [seekSeconds, setSeekSeconds] = useState(4);
   const [videoDuration, setVideoDuration] = useState(0);
@@ -484,6 +486,8 @@ export function PitchCalibrationModal({
       }
       const result = await previewPitchCalibration(previewPayload);
       setPreviewData(result);
+      setNetLineAdjusted(false);
+      setNetLineY(null);
       setStep("preview");
       const confPct = Math.round(result.confidence * 100);
       setReticleAnnouncement(
@@ -495,6 +499,11 @@ export function PitchCalibrationModal({
       setPreviewing(false);
     }
   };
+
+  const netLineFields =
+    sport === "badminton" && netLineAdjusted && netLineY != null
+      ? { net_line_y_override: netLineY }
+      : {};
 
   const handleSave = async () => {
     if (points.length < MIN_BOUNDARY_POINTS) return;
@@ -508,6 +517,7 @@ export function PitchCalibrationModal({
           frame_index: activeFrameIndex,
           image_boundary_points: boundaryPayload,
           ...calibrationCourtFields,
+          ...netLineFields,
         });
       } else {
         await savePitchCalibration({
@@ -515,6 +525,7 @@ export function PitchCalibrationModal({
           frame_index: activeFrameIndex,
           image_boundary_points: boundaryPayload,
           ...calibrationCourtFields,
+          ...netLineFields,
         });
       }
       onSaved(calibrationName);
@@ -637,6 +648,33 @@ export function PitchCalibrationModal({
                   <li key={w}>{w}</li>
                 ))}
               </ul>
+            )}
+            {sport === "badminton" && frameData && (
+              <div className={styles.previewMetric}>
+                {netLineAdjusted && netLineY != null ? (
+                  <label>
+                    Net line (image Y):{" "}
+                    <input
+                      type="range"
+                      min={0}
+                      max={frameData.height}
+                      value={netLineY}
+                      onChange={(e) => setNetLineY(Number(e.target.value))}
+                    />
+                    <strong>{netLineY}px</strong>
+                  </label>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNetLineAdjusted(true);
+                      setNetLineY(Math.round(frameData.height / 2));
+                    }}
+                  >
+                    Adjust net line (optional)
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}

@@ -18,7 +18,9 @@ def centroid_y(bbox: list[float]) -> float:
 
 
 def net_line_y_px(calibration: PitchCalibration) -> float:
-    """Pixel Y of the court centre line (net) from homography."""
+    """Pixel Y of the court centre line (net) from homography or manual override."""
+    if calibration.net_line_y_override is not None:
+        return float(calibration.net_line_y_override)
     length_m = calibration.pitch_length_m
     width_m = calibration.pitch_width_m
     px, py = calibration.meters_to_pixel(length_m / 2.0, width_m / 2.0)
@@ -79,6 +81,33 @@ def best_color_track_id(color_scores: dict[int, list[float]]) -> int | None:
     return best_id
 
 
+def disambiguate_single_on_court_side(
+    tracks: list[dict[str, Any]],
+    court_side: CourtSide,
+    net_y_px: float,
+    color_scores: dict[int, list[float]],
+) -> int | None:
+    """Lock when only one mature track is visible on the chosen court side."""
+    if len(tracks) != 1:
+        return None
+    tr = tracks[0]
+    bbox = tr.get("bbox")
+    if not bbox or len(bbox) < 4:
+        return None
+    cy = centroid_y(bbox)
+    on_near = _on_near_side(cy, net_y_px)
+    on_side = (court_side == "near" and on_near) or (court_side == "far" and not on_near)
+    if not on_side:
+        return None
+    tid = int(tr["track_id"])
+    scores = color_scores.get(tid, [])
+    if scores:
+        avg = sum(scores) / len(scores)
+        if avg < color_lock_min_avg() or len(scores) < color_lock_min_samples():
+            return None
+    return tid
+
+
 def disambiguate_with_fallback(
     tracks: list[dict[str, Any]],
     court_side: CourtSide,
@@ -93,6 +122,12 @@ def disambiguate_with_fallback(
     )
     if track_id is not None:
         return track_id, "court_side"
+
+    single_id = disambiguate_single_on_court_side(
+        tracks, court_side, net_y_px, color_scores
+    )
+    if single_id is not None:
+        return single_id, "court_side_single"
 
     color_id = best_color_track_id(color_scores)
     if color_id is not None:

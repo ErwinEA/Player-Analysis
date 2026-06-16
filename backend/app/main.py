@@ -333,7 +333,7 @@ async def analyze_default_video(
         "render_video=%s max_frames=%s",
         player_details.jerseyNumber,
         render,
-        os.environ.get("MAX_FRAMES", "(default 6000)"),
+        os.environ.get("MAX_FRAMES", "(default 12000)"),
     )
     try:
         result = await asyncio.to_thread(
@@ -412,7 +412,7 @@ async def analyze(
             player_details.jerseyNumber,
             cal_key or "(default)",
             render,
-            os.environ.get("MAX_FRAMES", "(default 6000)"),
+            os.environ.get("MAX_FRAMES", "(default 12000)"),
         )
         result = await asyncio.to_thread(
             run_pipeline,

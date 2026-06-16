@@ -31,7 +31,7 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from backend.app.pipeline.mask_rle import decode_mask_rle
-from backend.app.pipeline.run import run_pipeline
+from backend.app.pipeline.run import DEFAULT_MAX_FRAMES, run_pipeline
 from backend.app.schemas import AnalyzeResponse, PlayerDetails, Row
 
 
@@ -180,7 +180,7 @@ def main() -> int:
         "--pipeline-max-frames",
         type=int,
         default=None,
-        help="Cap pipeline processing (sets MAX_FRAMES env, default 5000)",
+        help=f"Cap pipeline processing (sets MAX_FRAMES env, default {DEFAULT_MAX_FRAMES})",
     )
     parser.add_argument(
         "--frame-start",
@@ -225,7 +225,7 @@ def main() -> int:
         rows = list(result.rows)
         fps = float(result.video.fps)
         n_mask = sum(1 for r in rows if r.mask_rle is not None)
-        cap = os.environ.get("MAX_FRAMES", "5000")
+        cap = os.environ.get("MAX_FRAMES", str(DEFAULT_MAX_FRAMES))
         print(
             f"[render_mask_overlay_video] "
             f"target.track_id={result.target.track_id!r} "

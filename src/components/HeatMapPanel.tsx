@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ANALYZE_FRAME_CAP } from "@/lib/analyzeConfig";
 import { getPitchTemplateUrl } from "@/lib/api";
 import { BADMINTON_COURT_IMAGE_PATH } from "@/lib/courtConfig";
 import type { HeatmapResult } from "@/types/analysis";
@@ -220,7 +221,7 @@ export function HeatMapPanel({
       <div className={styles.canvas}>
         {isLoading && (
           <p className={styles.loadingOverlay} aria-live="polite">
-            Running detection on up to {frameCap ?? 5000} frames…
+            Running detection on up to {frameCap ?? ANALYZE_FRAME_CAP} frames…
           </p>
         )}
         {displaySrc && !isLoading ? (

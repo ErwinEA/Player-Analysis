@@ -40,18 +40,22 @@ class PersonDetector:
             )
         self.iou = iou
         self.device = resolve_ultralytics_device()
+        raw_imgsz = os.environ.get("YOLO_IMGSZ", "").strip()
+        self.imgsz = int(raw_imgsz) if raw_imgsz.isdigit() and int(raw_imgsz) > 0 else None
         self.model = YOLO(self.weights)
         logger.info("PersonDetector YOLO on device=%s", self.device)
 
     def __call__(self, frame: NDArray[np.uint8]) -> list[BBoxScore]:
-        result = self.model.predict(
-            frame,
-            classes=[0],
-            conf=self.conf,
-            iou=self.iou,
-            device=self.device,
-            verbose=False,
-        )[0]
+        kwargs: dict = {
+            "classes": [0],
+            "conf": self.conf,
+            "iou": self.iou,
+            "device": self.device,
+            "verbose": False,
+        }
+        if self.imgsz is not None:
+            kwargs["imgsz"] = self.imgsz
+        result = self.model.predict(frame, **kwargs)[0]
         if result.boxes is None or len(result.boxes) == 0:
             return []
 

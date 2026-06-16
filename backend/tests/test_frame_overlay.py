@@ -67,3 +67,20 @@ def test_draw_overlay_badminton_shuttle_optional() -> None:
     )
     assert out is not frame
     assert int(out.sum()) > 0
+
+
+def test_draw_overlay_badminton_rally_end_label() -> None:
+    frame = np.zeros((120, 160, 3), dtype=np.uint8)
+    tracks = [
+        TrackDraw(track_id=1, bbox=[40.0, 20.0, 80.0, 100.0]),
+    ]
+    out = draw_overlay_badminton(
+        frame,
+        tracks,
+        locked_track_id=1,
+        court_side_label="NEAR",
+        shuttle_px=None,
+        rally_state="END",
+    )
+    assert out is not frame
+    assert int(out.sum()) > 0

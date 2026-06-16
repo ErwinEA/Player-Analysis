@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import cv2
@@ -357,6 +358,8 @@ def _calibration_from_request(
                 )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if body.net_line_y_override is not None:
+        cal = replace(cal, net_line_y_override=float(body.net_line_y_override))
     return cal, diag, frame, width, height
 
 

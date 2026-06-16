@@ -10,6 +10,7 @@ def _tracker(**kwargs) -> RallyTracker:
         live_frames=2,
         gap_frames=5,
         post_land_cooldown_frames=0,
+        merge_ms=0.0,
     )
     defaults.update(kwargs)
     return RallyTracker(**defaults)
@@ -160,6 +161,34 @@ def test_static_shuttle_on_court_does_not_start_rally():
         tr.update(i, (300.0, 500.0))
     assert tr.state == "IDLE"
     assert tr.events == []
+
+
+def test_fast_exchange_merges_rallies(monkeypatch):
+    monkeypatch.setenv("SHUTTLE_RALLY_MERGE_MS", "2000")
+    tr = _tracker(
+        post_land_cooldown_frames=0,
+        land_stable_frames=2,
+        min_flight_frames=2,
+        merge_ms=2000.0,
+    )
+
+    def flight_then_land(start: int) -> int:
+        tr.update(start, (200.0, 100.0))
+        tr.update(start + 1, (200.0, 112.0))
+        tr.update(start + 2, (200.0, 124.0))
+        tr.update(start + 3, (200.0, 128.0))
+        tr.update(start + 4, (200.0, 128.5))
+        end_frame = start + 5
+        tr.update(end_frame, (200.0, 128.5))
+        return end_frame
+
+    end1 = flight_then_land(0)
+    tr.update(end1 + 1, None)
+    # Quick re-start within merge window (30 fps → ~0.17s gap)
+    end2 = flight_then_land(end1 + 2)
+    assert len(tr.events) == 1
+    assert tr.events[0].start_frame == 0
+    assert tr.events[0].end_frame == end2
 
 
 def test_multiple_rallies_via_landing_cycles():

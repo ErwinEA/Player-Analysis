@@ -51,7 +51,7 @@ class VideoMeta(BaseModel):
     height: int
     frames: int
     duration_s: float
-    frame_cap: int | None = None  # max frames processed (legacy default 5000)
+    frame_cap: int | None = None  # max frames processed (default 12000)
     frame_start: int = 0  # leading frames skipped (FRAME_START); offsets mask sync on rendered clip
 
 
@@ -211,6 +211,7 @@ class AnalyzeResponse(BaseModel):
     drive_contact_m: float | None = None
     badminton_stats: BadmintonStats | None = None
     badminton_stats_unavailable_reason: str | None = None
+    warnings: list[str] = Field(default_factory=list)
     shuttle_samples: list[ShuttleSample] = Field(default_factory=list)
     video_url: str | None = None
     video_unavailable_reason: str | None = None
@@ -239,6 +240,7 @@ class PitchCalibrationSaveRequest(BaseModel):
     """Frame size for preview when the calibration video is not on the server yet."""
     image_width: int | None = Field(default=None, ge=1)
     image_height: int | None = Field(default=None, ge=1)
+    net_line_y_override: float | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def image_size_pair(self) -> PitchCalibrationSaveRequest:

@@ -149,14 +149,17 @@ def _badminton_request(**overrides) -> InsightsRequest:
 def test_build_facts_packet_badminton_includes_rally_stats():
     facts = build_facts_packet(_badminton_request())
     assert "Court side: near" in facts
-    assert "Total rallies: 9" in facts
+    assert "Total rallies (estimated): 9" in facts
+    assert "heuristic" in facts.lower()
+    assert "Points won on serve" not in facts
+    assert "In / out" not in facts
     assert "Court length thirds" in facts
     assert "Jersey:" not in facts
 
 
 def test_build_facts_packet_badminton_missing_rally_stats():
     facts = build_facts_packet(_badminton_request(badminton_stats=None))
-    assert "Rally / point stats: not available" in facts
+    assert "Rally stats: not available" in facts
     assert "Distance: 420.0 m" in facts
 
 

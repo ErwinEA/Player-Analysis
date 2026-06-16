@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from backend.app.schemas import BadmintonStats, TargetMatch
@@ -10,10 +11,34 @@ if TYPE_CHECKING:
     from backend.app.pipeline.badminton.rally_tracker import RallyEvent
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 def _rally_duration_s(ev: "RallyEvent", fps: float) -> float:
     if fps <= 0:
         return 0.0
     return (ev.end_frame - ev.start_frame) / fps
+
+
+def _valid_rally_durations(
+    rally_events: list["RallyEvent"],
+    fps: float,
+) -> list[float]:
+    min_s = _env_float("BADMINTON_MIN_RALLY_S", 1.0)
+    max_s = _env_float("BADMINTON_MAX_RALLY_S", 120.0)
+    out: list[float] = []
+    for ev in rally_events:
+        d = _rally_duration_s(ev, fps)
+        if min_s <= d <= max_s:
+            out.append(d)
+    return out
 
 
 def build_badminton_stats(
@@ -45,7 +70,7 @@ def build_badminton_stats(
 
     if rally_events:
         total_rallies = len(rally_events)
-        durations = [_rally_duration_s(ev, fps) for ev in rally_events]
+        durations = _valid_rally_durations(rally_events, fps)
         if durations:
             avg_rally_duration_s = round(sum(durations) / len(durations), 2)
             longest_rally_duration_s = round(max(durations), 2)

@@ -56,7 +56,7 @@ test.describe("Full badminton analyze flow (videoplayback)", () => {
       page.getByRole("button", { name: /^Analyzing/i }),
     ).toBeVisible({ timeout: 15_000 });
 
-    // 6000-frame cap on MPS can take a long time.
+    // 12000-frame cap on MPS can take a long time.
     await expect(
       page.getByText("Player position heat map", { exact: true }),
     ).toBeVisible({ timeout: 80 * 60 * 1000 });
@@ -72,7 +72,9 @@ test.describe("Full badminton analyze flow (videoplayback)", () => {
 
     const metrics = page.getByRole("region", { name: "Player Metrics" });
     await expect(metrics.getByText("Total rallies", { exact: true })).toBeVisible();
-    await expect(metrics.getByText("In / out calls", { exact: true })).toBeVisible();
+    await expect(
+      metrics.getByText("Heuristic estimates — not official scoring.", { exact: true }),
+    ).toBeVisible();
 
     const maskToggle = page.getByRole("checkbox", {
       name: /Show player mask/i,

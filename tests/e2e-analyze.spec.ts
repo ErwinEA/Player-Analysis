@@ -52,7 +52,7 @@ test.describe("Full analyze flow (testmatch2)", () => {
       page.getByRole("button", { name: /^Analyzing/i }),
     ).toBeVisible({ timeout: 15_000 });
 
-    // Wait for pipeline + insights to finish (5000 frames can exceed 45 min on MPS).
+    // Wait for pipeline + insights to finish (12000 frames can exceed 45 min on MPS).
     await expect(
       page.getByText("Player position heat map", { exact: true }),
     ).toBeVisible({ timeout: 80 * 60 * 1000 });

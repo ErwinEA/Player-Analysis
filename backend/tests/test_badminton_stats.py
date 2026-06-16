@@ -101,3 +101,26 @@ def test_build_badminton_stats_fills_rally_fields():
     assert stats.points_won_on_return == 1
     assert stats.points_in == 3
     assert stats.points_out == 1
+
+
+def test_build_badminton_stats_clamps_duration_outliers(monkeypatch):
+    from backend.app.pipeline.badminton.rally_tracker import RallyEvent
+
+    monkeypatch.setenv("BADMINTON_MIN_RALLY_S", "1.0")
+    monkeypatch.setenv("BADMINTON_MAX_RALLY_S", "120.0")
+    target = TargetMatch(jersey=0, track_id=7, confidence=1.0, method="court_side")
+    events = [
+        RallyEvent(0, 15, "near", "near", False),  # 0.5s — excluded
+        RallyEvent(100, 400, "near", "near", False),  # 10s — included
+    ]
+    stats, _ = build_badminton_stats(
+        target=target,
+        has_calibration=True,
+        rally_events=events,
+        court_side="near",
+        fps=30.0,
+        shuttle_available=True,
+    )
+    assert stats is not None
+    assert stats.avg_rally_duration_s == 10.0
+    assert stats.longest_rally_duration_s == 10.0

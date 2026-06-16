@@ -1,6 +1,6 @@
-import type { PlayerDetails } from "@/components/Sidebar";
 import type { AnalyzeResponse } from "@/types/analysis";
 import type { InsightsRequest } from "@/types/insights";
+import type { PlayerDetails } from "@/types/player";
 import type { Sport } from "@/types/sport";
 import { badmintonMetricsWarning } from "@/lib/badmintonMetrics";
 

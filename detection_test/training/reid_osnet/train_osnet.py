@@ -54,59 +54,11 @@ def _build_model(model_name: str, num_classes: int, pretrained: bool):
     model = build_model(
         model_name, num_classes=num_classes, pretrained=pretrained, loss="triplet"
     )
-    # #region agent log
-    import json, time
-
-    with open(
-        "/Users/erwinelgy/projects/player analysis/.cursor/debug-bfa96a.log", "a"
-    ) as _f:
-        _f.write(
-            json.dumps(
-                {
-                    "sessionId": "bfa96a",
-                    "hypothesisId": "A",
-                    "location": "train_osnet.py:_build_model",
-                    "message": "model built",
-                    "data": {"loss": getattr(model, "loss", None), "model_name": model_name},
-                    "timestamp": int(time.time() * 1000),
-                    "runId": "post-fix",
-                }
-            )
-            + "\n"
-        )
-    # #endregion
     return model
 
 
 def _forward_train(model, images):
     out = model(images)
-    # #region agent log
-    import json, time
-
-    with open(
-        "/Users/erwinelgy/projects/player analysis/.cursor/debug-bfa96a.log", "a"
-    ) as _f:
-        _f.write(
-            json.dumps(
-                {
-                    "sessionId": "bfa96a",
-                    "hypothesisId": "A",
-                    "location": "train_osnet.py:_forward_train",
-                    "message": "forward output",
-                    "data": {
-                        "training": model.training,
-                        "loss": getattr(model, "loss", None),
-                        "out_type": type(out).__name__,
-                        "is_tuple": isinstance(out, tuple),
-                        "tuple_len": len(out) if isinstance(out, tuple) else None,
-                    },
-                    "timestamp": int(time.time() * 1000),
-                    "runId": "post-fix",
-                }
-            )
-            + "\n"
-        )
-    # #endregion
     if isinstance(out, tuple) and len(out) >= 2:
         return out[0], out[1]
     raise RuntimeError("Expected (logits, features) tuple from torchreid model in train mode")

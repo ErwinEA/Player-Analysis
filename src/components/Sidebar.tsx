@@ -2,22 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRadioGroupKeyboard } from "@/hooks/useRadioGroupKeyboard";
+import type { HexColor, PlayerDetails } from "@/types/player";
 import type { CourtSide, Sport } from "@/types/sport";
 import styles from "./Sidebar.module.css";
 import { EyedropperIcon, InfoIcon, UserIcon } from "./icons";
 import { JerseyColorEyedropperModal } from "./JerseyColorEyedropperModal";
-
-export type HexColor = `#${string}`;
-
-export type PlayerDetails = {
-  sport: Sport;
-  name: string;
-  jerseyNumber: number;
-  courtSide: CourtSide | "";
-  primaryJerseyColor: HexColor | "";
-  secondaryJerseyColor: HexColor | "";
-  teamName: string;
-};
 
 type SidebarProps = {
   sport: Sport;

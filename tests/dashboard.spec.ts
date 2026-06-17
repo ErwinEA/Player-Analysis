@@ -77,7 +77,9 @@ test.describe("Player Analysis dashboard", () => {
   test("jersey number input enables analyze hint to drop video requirement", async ({
     page,
   }) => {
-    await page.getByLabel("Jersey number").fill("23");
+    const jerseyInput = page.getByLabel("Jersey number");
+    await jerseyInput.pressSequentially("23");
+    await expect(jerseyInput).toHaveValue("23");
     const hint = page.locator("#analyze-hint");
     await expect(hint).toContainText(/Upload a video/i);
     await expect(hint).not.toContainText(/Enter jersey number/i);

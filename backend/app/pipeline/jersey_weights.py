@@ -1,16 +1,14 @@
-"""Resolve jersey classifier checkpoint paths (shared with detection_test/weights/)."""
+"""Resolve jersey classifier checkpoint paths under backend/weights/."""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_DET_WEIGHTS = _REPO_ROOT / "detection_test" / "weights"
-_BACKEND_WEIGHTS = Path(__file__).resolve().parents[2] / "weights"
+from backend.app.pipeline.weight_paths import BACKEND_WEIGHTS, JERSEY_CHECKPOINT
 
-JERSEY_NUMBER_DEFAULT = _DET_WEIGHTS / "jersey_number_b0.pt"
-JERSEY_NUMBER_META_DEFAULT = _DET_WEIGHTS / "jersey_number_b0.json"
+JERSEY_NUMBER_DEFAULT = BACKEND_WEIGHTS / JERSEY_CHECKPOINT
+JERSEY_NUMBER_META_DEFAULT = BACKEND_WEIGHTS / "jersey_number_b0.json"
 
 
 def resolve_jersey_weights(explicit: str | None = None) -> Path | None:
@@ -21,12 +19,8 @@ def resolve_jersey_weights(explicit: str | None = None) -> Path | None:
     if env:
         path = Path(env).expanduser()
         return path if path.is_file() else None
-    for candidate in (
-        JERSEY_NUMBER_DEFAULT,
-        _BACKEND_WEIGHTS / "jersey_number_b0.pt",
-    ):
-        if candidate.is_file():
-            return candidate
+    if JERSEY_NUMBER_DEFAULT.is_file():
+        return JERSEY_NUMBER_DEFAULT
     return None
 
 

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from backend.app.pipeline.inference_device import resolve_ultralytics_device
+from backend.app.pipeline.weight_paths import BACKEND_WEIGHTS, BALL_CHECKPOINT
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -18,8 +19,6 @@ if TYPE_CHECKING:
     from backend.app.pipeline.pitch_homography import PitchCalibration
 
 logger = logging.getLogger(__name__)
-
-_REPO_ROOT = Path(__file__).resolve().parents[4]
 
 _ball_yolo_model = None
 _ball_yolo_weights: str | None = None
@@ -62,13 +61,8 @@ def resolve_ball_weights(explicit: str | None = None) -> str | None:
     env = os.environ.get("BALL_WEIGHTS", "").strip()
     if env and Path(env).is_file():
         return env
-    for candidate in (
-        _REPO_ROOT / "detection_test" / "weights" / "yolov8n_ball.pt",
-        _REPO_ROOT / "backend" / "weights" / "yolov8n_ball.pt",
-    ):
-        if candidate.is_file():
-            return str(candidate)
-    return None
+    candidate = BACKEND_WEIGHTS / BALL_CHECKPOINT
+    return str(candidate) if candidate.is_file() else None
 
 
 @dataclass(frozen=True)
@@ -226,7 +220,7 @@ class BallDetector:
         if resolved is None:
             logger.warning(
                 "Ball weights not found — ball events disabled. "
-                "Place yolov8n_ball.pt in detection_test/weights/ or set BALL_WEIGHTS."
+                "Place yolov8n_ball.pt in backend/weights/ or set BALL_WEIGHTS."
             )
             return
 

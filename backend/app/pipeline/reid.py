@@ -1,24 +1,22 @@
-"""OSNet ReID for legacy player lock (SoccerNet-trained weights)."""
+"""OSNet ReID for player lock (SoccerNet-trained weights)."""
 
 from __future__ import annotations
 
 import logging
 import os
-import sys
 from pathlib import Path
 
 import numpy as np
 
 from backend.app.pipeline.inference_device import resolve_torch_device_str
+from backend.app.pipeline.reid_extractor import ReIDFeatureExtractor
+from backend.app.pipeline.weight_paths import (
+    BACKEND_WEIGHTS,
+    OSNET_ALIAS,
+    OSNET_CHECKPOINT,
+)
 
 logger = logging.getLogger(__name__)
-
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_DET_TEST = _REPO_ROOT / "detection_test"
-_WEIGHTS_DIR = _DET_TEST / "weights"
-_BACKEND_WEIGHTS = Path(__file__).resolve().parents[2] / "weights"
-
-_DEFAULT_CHECKPOINT = "osnet_x1_0_soccernet.pth"
 
 _extractor: object | None = None
 _extractor_unavailable = False
@@ -33,9 +31,8 @@ def resolve_reid_weights_path() -> Path | None:
             return path
 
     for candidate in (
-        _WEIGHTS_DIR / _DEFAULT_CHECKPOINT,
-        _WEIGHTS_DIR / "osnet_soccer_reid.pth",
-        _BACKEND_WEIGHTS / _DEFAULT_CHECKPOINT,
+        BACKEND_WEIGHTS / OSNET_CHECKPOINT,
+        BACKEND_WEIGHTS / OSNET_ALIAS,
     ):
         if candidate.is_file():
             return candidate
@@ -60,18 +57,12 @@ def get_reid_extractor():
 
     weights = resolve_reid_weights_path()
 
-    det_path = str(_DET_TEST)
-    if det_path not in sys.path:
-        sys.path.insert(0, det_path)
-
     try:
-        from reid_extractor import ReIDFeatureExtractor
-
         if weights is None:
             logger.info(
-                "%s not found under detection_test/weights/; "
+                "%s not found under backend/weights/; "
                 "using ImageNet-pretrained osnet_x1_0 (set REID_WEIGHTS for SoccerNet weights)",
-                _DEFAULT_CHECKPOINT,
+                OSNET_CHECKPOINT,
             )
         reid_device = resolve_torch_device_str(env_key="INFERENCE_DEVICE")
         _extractor = ReIDFeatureExtractor(

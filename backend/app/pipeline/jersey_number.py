@@ -147,7 +147,7 @@ class JerseyNumberClassifier:
         else:
             logger.warning(
                 "Jersey classifier weights not found (set JERSEY_WEIGHTS or place "
-                "jersey_number_b0.pt under detection_test/weights/) — EasyOCR fallback only."
+                "jersey_number_b0.pt under backend/weights/) — EasyOCR fallback only."
             )
 
     @staticmethod

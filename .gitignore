@@ -72,6 +72,7 @@ backend/data/
 
 # Vendored deps (cloned by detection_test/scripts/install_torchreid.sh)
 detection_test/.vendor/
+backend/.vendor/
 
 # GIMP source files
 *.xcf

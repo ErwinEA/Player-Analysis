@@ -1868,7 +1868,7 @@ def run_pipeline(
         ):
             masks_unavailable_reason = mobile_sam_unavailable_reason() or (
                 "MobileSAM did not load — install timm and mobile_sam in the backend "
-                "venv (see backend/weights/README.md), then re-run Analyze."
+                "venv (see README.md), then re-run Analyze."
             )
         elif (
             not masks_available

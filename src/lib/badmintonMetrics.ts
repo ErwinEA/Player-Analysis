@@ -38,7 +38,7 @@ export function badmintonMetricsWarning(
     return "Rally stats need a confident player lock via court side or shirt color.";
   }
   if (reason === "no_shuttle_weights") {
-    return "Rally stats need shuttle detection weights: add yolov8m_shuttlecock.pt to backend/weights (see backend/weights/README.md).";
+    return "Rally stats need shuttle detection weights: add yolov8m_shuttlecock.pt to backend/weights (see README.md).";
   }
   if (reason === "rallies_replay_filtered") {
     return "Rallies were detected but excluded as likely replay/highlight footage — try a continuous match clip.";

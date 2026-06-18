@@ -44,7 +44,7 @@ yarn-error.log*
 # Keep weight directory placeholders
 !backend/weights/.gitkeep
 
-# Vendored research repos (clone separately; see third_party/README.md)
+# Vendored research repos (clone separately; see README)
 third_party/SoccerTrack-v2/
 
 # Training artifact archives (use extracted dirs only)

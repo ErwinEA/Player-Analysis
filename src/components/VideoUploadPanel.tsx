@@ -426,7 +426,7 @@ export function VideoUploadPanel({
           {samStatus === "error" && (
             <p className={styles.maskHint} role="status" aria-live="polite">
               {mobileSamHealth?.unavailable_reason ??
-                "MobileSAM failed to load — install timm and mobile_sam in the backend venv (see backend/weights/README.md), restart the API, then re-run Analyze."}
+                "MobileSAM failed to load — install timm and mobile_sam in the backend venv (see README.md), restart the API, then re-run Analyze."}
             </p>
           )}
           {maskUnavailable && (

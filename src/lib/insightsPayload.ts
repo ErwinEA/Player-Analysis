@@ -19,7 +19,7 @@ function eventsWarning(result: AnalyzeResponse): string | null {
   const reason = result.events_unavailable_reason;
   if (!reason) return null;
   if (reason === "no_ball_weights") {
-    return "Ball event stats unavailable: add yolov8n_ball.pt (see backend/weights/README.md).";
+    return "Ball event stats unavailable: add yolov8n_ball.pt (see README.md).";
   }
   if (reason === "no_calibration") {
     return "Ball event stats need pitch calibration. Calibrate the pitch, then re-run Analyze.";

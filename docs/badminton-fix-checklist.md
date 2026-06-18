@@ -80,7 +80,7 @@ Execution checklist with file paths. Ordered **P0 → P4**. Check boxes as you s
 | Task | Files | Notes |
 |------|-------|-------|
 | [ ] Add **"Rally ended"** text near flash or replace flash | `backend/app/pipeline/frame_overlay.py` (`draw_overlay_badminton`, `draw_rally_end_flash`, ~L168–210) | Only when `render_video=true` |
-| [ ] Optional: document in weights/README | `backend/weights/README.md` | |
+| [ ] Optional: document in README | `README.md` | |
 
 **Verify:** `backend/tests/test_frame_overlay.py`
 
@@ -107,7 +107,7 @@ Execution checklist with file paths. Ordered **P0 → P4**. Check boxes as you s
 | Task | Files | Notes |
 |------|-------|-------|
 | [ ] Reject detection if displacement vs last accepted > max px/frame (or m/s if calibrated) | `backend/app/pipeline/badminton/shuttle_detector.py` or small helper module e.g. `backend/app/pipeline/badminton/shuttle_filter.py` | Stateful: needs last good position + frame index |
-| [ ] Env tunables | Document in `backend/README.md`, `backend/weights/README.md` | e.g. `SHUTTLE_MAX_SPEED_PX` |
+| [ ] Env tunables | Document in `README.md` | e.g. `SHUTTLE_MAX_SPEED_PX` |
 | [ ] Apply **before** `ShuttleKalman.update` in run loop | `backend/app/pipeline/run.py` (~L1243–1263) | |
 
 **Verify:** `backend/tests/test_shuttle_detector.py` or `backend/tests/test_rally_tracker.py` with injected positions
@@ -199,7 +199,7 @@ Execution checklist with file paths. Ordered **P0 → P4**. Check boxes as you s
 |------|-------|-------|
 | [ ] Skip segmenter / default `SAM_ENABLED=0` on badminton path | `backend/app/pipeline/run.py` (`is_badminton`, segmenter init), `backend/app/pipeline/segmentation.py` | Foot proxy already: `movement_stats.foot_position_pixels` |
 | [ ] Bbox ellipse when no `mask_rle` in overlay | `backend/app/pipeline/frame_overlay.py`, frontend `src/lib/maskRle.ts` / `UploadAnalyzePanel` | `draw_foot_ellipse` exists |
-| [ ] Document | `backend/weights/README.md`, `UNIFIED_SYSTEM_GUIDE.md` | |
+| [ ] Document | `README.md` | |
 
 **Verify:** `backend/tests/test_run_pipeline_sport_gates.py`, mask-related tests
 
@@ -207,7 +207,7 @@ Execution checklist with file paths. Ordered **P0 → P4**. Check boxes as you s
 
 | Task | Files | Notes |
 |------|-------|-------|
-| [ ] Confirm `TRACKER_TYPE=botsort` in dev docs for badminton | `scripts/dev_backend.sh` (~L12), `backend/README.md`, `backend/weights/README.md` | Already implemented in `backend/app/pipeline/tracker.py` |
+| [ ] Confirm `TRACKER_TYPE=botsort` in dev docs for badminton | `scripts/dev_backend.sh` (~L12), `README.md` | Already implemented in `backend/app/pipeline/tracker.py` |
 
 ### P4.3 — Higher YOLO `imgsz` (experiment)
 
@@ -259,7 +259,7 @@ Execution checklist with file paths. Ordered **P0 → P4**. Check boxes as you s
 
 | Task | Files | Notes |
 |------|-------|-------|
-| [ ] Script: check presence + print fetch steps (not full auto-download) | `backend/scripts/check_weights.sh` (new), `backend/weights/README.md` | Custom weights: `jersey_number_b0.pt`, `osnet_x1_0_soccernet.pth`, `yolov8m_shuttlecock.pt` |
+| [ ] Script: check presence + print fetch steps (not full auto-download) | `backend/scripts/check_weights.sh` (new), `README.md` | Custom weights: `jersey_number_b0.pt`, `osnet_x1_0_soccernet.pth`, `yolov8m_shuttlecock.pt` |
 | [ ] Existing MobileSAM installer | `backend/scripts/install_mobile_sam.sh` | |
 
 ---

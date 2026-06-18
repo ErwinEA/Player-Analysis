@@ -180,7 +180,6 @@ function getAnalyzeBlockers(
   if (apiStatus === "offline") {
     blockers.push("API offline — start backend on port 8000");
   }
-  if (apiStatus !== "online") return blockers;
   if (!video) blockers.push("Upload a video");
   if (sport === "badminton") {
     if (!details.courtSide) blockers.push("Select court side");

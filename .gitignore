@@ -43,7 +43,12 @@ yarn-error.log*
 
 # Keep weight directory placeholders
 !backend/weights/.gitkeep
-!detection_test/weights/.gitkeep
+
+# Vendored research repos (clone separately; see third_party/README.md)
+third_party/SoccerTrack-v2/
+
+# Training artifact archives (use extracted dirs only)
+detection_test/training/**/*.zip
 
 # Videos & large media
 *.mp4
@@ -70,7 +75,7 @@ detection_test/test2/
 # Local data (uploads, calibration assets, fixtures)
 backend/data/
 
-# Vendored deps (cloned by detection_test/scripts/install_torchreid.sh)
+# Vendored deps (cloned by backend/scripts/install_torchreid.sh)
 detection_test/.vendor/
 backend/.vendor/
 

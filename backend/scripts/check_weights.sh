@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-WEIGHTS="$ROOT/backend/weights"
+WEIGHTS="$ROOT/weights"
 
 check() {
   local name="$1"

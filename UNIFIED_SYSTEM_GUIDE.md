@@ -63,7 +63,7 @@ sequenceDiagram
 
 - Node.js + npm (for Next.js frontend)
 - Python 3.10+ (backend)
-- Optional model checkpoints in `detection_test/weights/` and `backend/weights/` for best results
+- Optional model checkpoints in `backend/weights/` for best results
 
 ### Installation
 
@@ -159,8 +159,8 @@ npm run lint
 | Invalid `calibration_name` format | API returns 400 | Use only letters, digits, `_`, `-`. |
 | No calibration or bad calibration fit | Metre movement/heatmap may be null or wrong | Run calibration preview and save again on a wide, clear pitch frame. |
 | Missing `mobile_sam.pt` | Segmentation health degraded; bbox fallback used | Add `backend/weights/mobile_sam.pt` or disable SAM intentionally. |
-| Missing jersey/ReID weights | Lock quality drops, more weak/approximate warnings | Add `jersey_number_b0.pt` and OSNet weights under `detection_test/weights/`. |
-| Missing ball weights | Event counts unavailable (`no_ball_weights`) | Add `yolov8n_ball.pt` to `detection_test/weights/` or set `BALL_WEIGHTS`. |
+| Missing jersey/ReID weights | Lock quality drops, more weak/approximate warnings | Add `jersey_number_b0.pt` and OSNet weights under `backend/weights/`. |
+| Missing ball weights | Event counts unavailable (`no_ball_weights`) | Add `yolov8n_ball.pt` to `backend/weights/` or set `BALL_WEIGHTS`. |
 | Slow analyze on long clips | High latency and delayed response | Reduce clip length or lower `MAX_FRAMES`; use GPU-backed env where available. |
 | Concurrent quick file changes in UI | Calibration-ready status can desync if stale requests win | Keep latest code with request-version guard in `UploadAnalyzePanel`. |
 | Very large upload | Request rejected due to size cap | Increase `MAX_UPLOAD_MB` intentionally or upload a smaller clip. |

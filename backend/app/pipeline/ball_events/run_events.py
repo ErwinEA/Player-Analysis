@@ -351,10 +351,6 @@ def _log_event_summary(
             m_dists.append(dist_m(t.target_m, b.smooth_m))
     possess_px = _env_float("POSSESS_RADIUS_PX", 90.0)
     payload = {
-        "sessionId": "6b7c41",
-        "runId": "summary",
-        "hypothesisId": "H6-anchor",
-        "location": "run_events.py:_log_event_summary",
         "message": "ball event pipeline summary",
         "data": {
             "post_lock_frames": len(post),

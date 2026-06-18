@@ -1,6 +1,6 @@
 # Model weights (backend)
 
-Place trained checkpoints in `backend/weights/`. The `detection_test/weights/` folder is for the offline sandbox only.
+Place trained checkpoints in `backend/weights/`.
 
 ## Happy path checklist (full `POST /api/analyze`)
 
@@ -40,8 +40,6 @@ curl -s http://localhost:8000/health | python3 -m json.tool   # mobile_sam.statu
 | `osnet_x1_0_soccernet.pth` | Generic ImageNet OSNet |
 | `yolov8n_ball.pt` | Ball event stats disabled |
 | `yolov8m_shuttlecock.pt` | Badminton rally stats disabled (`badminton_stats_unavailable_reason: no_shuttle_weights`) |
-
-Sandbox YOLO/ReID: [detection_test/WEIGHTS.md](../../detection_test/WEIGHTS.md).
 
 ---
 

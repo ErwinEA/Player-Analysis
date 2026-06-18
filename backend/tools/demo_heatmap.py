@@ -61,7 +61,8 @@ def main() -> None:
     parser.add_argument(
         "--detections",
         type=Path,
-        default=_REPO / "detection_test/output/testmatch2/detections.json",
+        required=True,
+        help="Path to detections JSON (e.g. from a prior analyze export)",
     )
     parser.add_argument(
         "--calibration",

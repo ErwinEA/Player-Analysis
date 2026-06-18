@@ -34,7 +34,7 @@ _DEFAULT_CLASS_NAMES = ["unknown"] + [str(n) for n in range(1, 100)]
 
 
 def number_crop(frame: NDArray, bbox: list[float]) -> NDArray:
-    """Tighter back band for digits (aligned with detection_test)."""
+    """Tighter back band for digits (legacy sandbox alignment)."""
     return crop_region(frame, bbox, top_pct=0.18, bot_pct=0.42, pad_x_pct=0.08)
 
 

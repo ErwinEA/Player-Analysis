@@ -176,11 +176,6 @@ function getAnalyzeBlockers(
   calibrationReady: boolean,
 ): string[] {
   const blockers: string[] = [];
-  if (apiStatus === "checking") blockers.push("Checking API…");
-  if (apiStatus === "offline") {
-    blockers.push("API offline — start backend on port 8000");
-  }
-  if (apiStatus !== "online") return blockers;
   if (!video) blockers.push("Upload a video");
   if (sport === "badminton") {
     if (!details.courtSide) blockers.push("Select court side");
@@ -192,6 +187,10 @@ function getAnalyzeBlockers(
     blockers.push("Enter jersey number (1–99)");
   } else if (details.jerseyNumber > 99) {
     blockers.push("Jersey number must be 99 or less");
+  }
+  if (apiStatus === "checking") blockers.push("Checking API…");
+  if (apiStatus === "offline") {
+    blockers.push("API offline — start backend on port 8000");
   }
   return blockers;
 }
